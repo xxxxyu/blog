@@ -94,7 +94,7 @@ stylesheets = []
 # Remote repository for your Zola site.
 # Used for `show_remote_changes` and `show_remote_source` (see below).
 # Supports GitHub, GitLab, Gitea, and Codeberg.
-remote_repository_url = "https://github.com/xxxxyu/xxxxyu.github.io"
+remote_repository_url = "https://github.com/xxxxyu/blog"
 # Set this to "auto" to try and auto-detect the platform based on the repository URL.
 # Accepted values are "github", "gitlab", "gitea", and "codeberg".
 remote_repository_git_platform = "auto" # Defaults to "auto".
@@ -160,7 +160,8 @@ favicon_emoji = "🌱"
 # social_media_card = "social_cards/index.jpg"
 
 menu = [
-    { name = "blog", url = "blog", trailing_slash = true },
+    # { name = "blog", url = "blog", trailing_slash = true },
+    { name = "blog", url = "contents", trailing_slash = true }, # TODO
     # { name = "archive", url = "archive", trailing_slash = true },
     { name = "tags", url = "tags", trailing_slash = true },
     # { name = "projects", url = "projects", trailing_slash = true },
@@ -185,6 +186,7 @@ encode_plaintext_email = true # Setting is ignored if email is already encoded.
 socials = [
     { name = "github", url = "https://github.com/xxxxyu/", icon = "github" },
     { name = "bilibili", url = "https://space.bilibili.com/244315926/", icon = "bilibili" },
+    # TODO
 ]
 
 # Extra menu to show on the footer, below socials section.
