@@ -160,8 +160,7 @@ favicon_emoji = "🌱"
 # social_media_card = "social_cards/index.jpg"
 
 menu = [
-    # { name = "blog", url = "blog", trailing_slash = true },
-    { name = "blog", url = "contents", trailing_slash = true }, # TODO
+    { name = "blog", url = "blog", trailing_slash = true },
     # { name = "archive", url = "archive", trailing_slash = true },
     { name = "tags", url = "tags", trailing_slash = true },
     # { name = "projects", url = "projects", trailing_slash = true },
