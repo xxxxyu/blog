@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?xml-stylesheet href="https://xxxxyu.github.io/blog/sitemap_style.xsl" type="text/xsl"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+    <url>
+        <loc>https://xxxxyu.github.io/blog/</loc>
+    </url>
+    <url>
+        <loc>https://xxxxyu.github.io/blog/articles/</loc>
+    </url>
+    <url>
+        <loc>https://xxxxyu.github.io/blog/articles/gpt-in-your-pocket-weekly/</loc>
+        <lastmod>2023-11-21</lastmod>
+    </url>
+    <url>
+        <loc>https://xxxxyu.github.io/blog/articles/page/1/</loc>
+    </url>
+    <url>
+        <loc>https://xxxxyu.github.io/blog/tags/</loc>
+    </url>
+    <url>
+        <loc>https://xxxxyu.github.io/blog/tags/edge-ai/</loc>
+    </url>
+    <url>
+        <loc>https://xxxxyu.github.io/blog/tags/llm-deployment/</loc>
+    </url>
+</urlset>
