@@ -1,7 +1,7 @@
 +++
 paginate_by = 5
-path = "/blog"
-title = "Blog"
+path = "/articles"
+title = "All articles"
 sort_by = "date"
 template = "section.html"
 insert_anchor_links = "left"
