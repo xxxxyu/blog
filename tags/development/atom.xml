@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<?xml-stylesheet href="https://xxxxyu.github.io/blog/feed_style.xsl" type="text/xsl"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:base="http://purl.org/atompub/base/1.0/" xml:lang="en" xml:base="https:&#x2F;&#x2F;xxxxyu.github.io&#x2F;blog">
+    <str:translations xmlns:str="https://github.com/welpo/tabi">
+        <str:about_feeds>This is a web feed, also known as an Atom feed. Subscribe by copying the URL from the address bar into your newsreader. Visit About Feeds to learn more and get started. It's free.</str:about_feeds>
+        <str:visit_the_site>Visit website</str:visit_the_site>
+        <str:recent_posts>Recent posts</str:recent_posts>
+    </str:translations><title>Xyu's Blog - Development</title>
+    <link href="https://xxxxyu.github.io/blog/tags/development/atom.xml" rel="self" type="application/atom+xml"/>
+    <link href="https://xxxxyu.github.io/blog"/>
+    <generator uri="https://www.getzola.org/">Zola</generator>
+    <updated>2025-01-03T00:00:00+00:00</updated>
+    <id>https://xxxxyu.github.io/blog/tags/development/atom.xml</id>
+    <entry xml:lang="en">
+        <title>Cheatsheet for Setting up Pi Devices</title>
+        <published>2025-01-03T00:00:00+00:00</published>
+        <updated>2025-01-03T00:00:00+00:00</updated>
+        <author>
+            <name>xxxxyu</name>
+        </author>
+        <link rel="alternate" href="https://xxxxyu.github.io/blog/articles/pi-setup-cheatsheet/" type="text/html"/>
+        <id>https://xxxxyu.github.io/blog/articles/pi-setup-cheatsheet/</id>
+        <summary type="html">A TODO list for quickly setting up new development boards like Raspberry Pi.</summary>
+        </entry>
+</feed>
