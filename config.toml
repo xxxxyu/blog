@@ -230,9 +230,10 @@ favicon_emoji = "🤓"
 # social_media_card = ""
 
 menu = [
-    { name = "posts", url = "posts", trailing_slash = true },
-    { name = "archive", url = "archive", trailing_slash = true },
-    { name = "tags", url = "tags", trailing_slash = true },
+    { name = "Posts", url = "posts", trailing_slash = true },
+    { name = "Archive", url = "archive", trailing_slash = true },
+    { name = "Tags", url = "tags", trailing_slash = true },
+    { name = "Academic", url = "academic", trailing_slash = true },
 ]
 
 # The RSS icon will be shown if (1) it's enabled and (2) the following variable is set to true.
