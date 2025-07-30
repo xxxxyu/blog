@@ -196,6 +196,18 @@ article {
             margin-block-end: var(--paragraph-spacing);
         }
     }
+
+    // Theme tabi overides the decoration of all <a>
+    // to `inherit`, which removes the default underlines.
+    // But in articles we resume underlines for better readability.
+    a {
+    text-decoration: underline;
+    }
+
+    // However, keep table of contents links without underline
+    .toc-container a {
+        text-decoration: inherit;
+    }
 }
 
 .section-title {
