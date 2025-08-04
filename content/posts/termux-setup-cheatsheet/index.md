@@ -2,13 +2,12 @@
 title = "Cheatsheet for Setting up Termux on Android Smartphones"
 date = "2025-01-09"
 updated = "2025-01-09"
-description = "A TODO list for quickly setting up Termux on Android smartphones for development."
+description = "Quickly setting up Termux on Android smartphones for development."
 
 [taxonomies]
 tags = ["Development", "Android", "Edge Device"]
 
 [extra]
-footnote_backlinks = true
 quick_navigation_buttons = true
 toc = true
 +++

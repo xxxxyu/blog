@@ -1,19 +1,16 @@
 +++
 title = "Cheatsheet for Setting up Pi Devices"
 date = "2025-01-03"
-updated = "2025-01-03"
-description = "A TODO list for quickly setting up new development boards like Raspberry Pi."
+updated = "2025-08-04"
+description = "Quickly setting up new single-board computers like Raspberry Pi."
 
 [taxonomies]
 tags = ["Development", "Linux", "Edge Device"]
 
 [extra]
-footnote_backlinks = true
 quick_navigation_buttons = true
 toc = true
 +++
-
-Nowadays it is quite easy to deploy open-source projects on a well-configured server, especially those in the Python ecosystem. However, it is not "that" easy if you need to setup a development board from scratch, especially for new beginners. Even an expeirenced developer might need to deal with possible exceptions. Anyway, it's always good to have a TODO list to ensure the setup process is quick and nothing is missed —— so comes this cheatsheet.
 
 This is mostly based on my personal development requirements. It is best applicable for boards like Orange Pi and Raspberry Pi.
 

@@ -1,21 +1,18 @@
 +++
 title = "Cheatsheet for Setting up Android Smartphones"
 date = "2025-01-09"
-updated = "2025-01-09"
-description = "A TODO list for quickly setting up Android smartphones for development."
+updated = "2025-08-04"
+description = "Quickly setting up Android smartphones for development."
 
 [taxonomies]
 tags = ["Development", "Android", "Edge Device"]
 
 [extra]
-footnote_backlinks = true
 quick_navigation_buttons = true
 toc = true
 +++
 
-Nowadays it is quite easy to deploy open-source projects on a well-configured server, especially those in the Python ecosystem. However, it is not "that" easy if you need to setup a smartphone for development from scratch, especially for new beginners. Even an expeirenced developer might need to deal with possible exceptions. Anyway, it's always good to have a TODO list to ensure the setup process is quick and nothing is missed —— so comes this cheatsheet.
-
-This is mostly based on my personal development requirements, which are focused on AI-related computing tasks. Specifically, I run DNNs as if the smartphone was just a Linux development board (e.g., Raspberry Pi), but with different chips and OS, which are quite similar to the Linux ones. So it might not perfectly suits you if you're more interested in App development and GUI debugging.
+This is mostly based on my personal development requirements, which are focused on AI-related computing tasks. Specifically, I run DNNs in a Linux-like environment. So it might not perfectly suits you if you're more interested in App development and GUI debugging.
 
 ## First Boot
 

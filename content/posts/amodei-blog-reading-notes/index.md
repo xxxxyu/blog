@@ -1,7 +1,7 @@
 +++
 title = "Reading Notes of Dario Amodei's Blog"
 date = "2025-08-02"
-updated = "2025-08-02"
+updated = "2025-08-04"
 description = "Reading Notes of Dario Amodei's Blog."
 
 [taxonomies]
