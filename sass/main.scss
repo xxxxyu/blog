@@ -208,6 +208,14 @@ article {
     .toc-container a {
         text-decoration: inherit;
     }
+    // Keep footnote references and backlinks without underline
+    .footnote-reference a {
+        text-decoration: inherit;
+    }
+    // Target backlinks: last link in footnote that starts with # (internal link)
+    .footnotes-list li a[href^="#"]:last-child {
+        text-decoration: inherit;
+    }
 }
 
 .section-title {
