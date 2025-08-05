@@ -197,24 +197,28 @@ article {
         }
     }
 
-    // Theme tabi overides the decoration of all <a>
-    // to `inherit`, which removes the default underlines.
-    // But in articles we resume underlines for better readability.
-    a {
-    text-decoration: underline;
-    }
+    .e-content.body {
 
-    // However, keep table of contents links without underline
-    .toc-container a {
-        text-decoration: inherit;
-    }
-    // Keep footnote references and backlinks without underline
-    .footnote-reference a {
-        text-decoration: inherit;
-    }
-    // Target backlinks: last link in footnote that starts with # (internal link)
-    .footnotes-list li a[href^="#"]:last-child {
-        text-decoration: inherit;
+        // Theme tabi overides the decoration of all <a>
+        // to `inherit`, which removes the default underlines.
+        // But in articles we resume underlines for better readability.
+        a {
+        text-decoration: underline;
+        }
+
+        // However, keep table of contents links without underline
+        .toc-container a {
+            text-decoration: inherit;
+        }
+        // Keep footnote references and backlinks without underline
+        .footnote-reference a {
+            text-decoration: inherit;
+        }
+        // Target backlinks: last link in footnote that starts with # (internal link)
+        .footnotes-list li a[href^="#"]:last-child {
+            text-decoration: inherit;
+        }
+
     }
 }
 
