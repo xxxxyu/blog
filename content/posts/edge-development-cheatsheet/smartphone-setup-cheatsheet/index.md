@@ -9,7 +9,7 @@ tags = ["Development", "Android", "Edge Device"]
 
 [extra]
 quick_navigation_buttons = true
-toc = true
+toc = false
 +++
 
 This is mostly based on my personal development requirements, which are focused on AI-related computing tasks. Specifically, I run DNNs in a Linux-like environment. So it might not perfectly suits you if you're more interested in App development and GUI debugging.

@@ -9,7 +9,7 @@ tags = ["Development", "Linux", "Edge Device"]
 
 [extra]
 quick_navigation_buttons = true
-toc = true
+toc = false
 +++
 
 This is mostly based on my personal development requirements. It is best applicable for boards like Orange Pi and Raspberry Pi.

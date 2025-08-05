@@ -9,7 +9,7 @@ tags = ["Development", "Android", "Edge Device"]
 
 [extra]
 quick_navigation_buttons = true
-toc = true
+toc = false
 +++
 
 [Termux](https://termux.dev/en/) is a useful software for emulating Linux environment in Android (much better than the ADB shell). As part of the [Smartphone Setup Cheatsheet](https://xxxxyu.github.io/blog/articles/smartphone-setup-cheatsheet/), this article elaborates on how to setup Termux.
