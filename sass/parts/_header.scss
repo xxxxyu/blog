@@ -55,7 +55,7 @@ header {
     padding: 0.66rem;
     color: var(--text-color);
     font-weight: 400; // Increased by @xxxxyu
-    font-size: 1em;
+    font-size: 1.1em; // Increased by @xxxxyu
     line-height: 2.5;
     text-decoration: none;
 }
@@ -65,8 +65,8 @@ header {
     border: none;
     padding: 0.12rem;
     color: var(--primary-color);
-    font-weight: 450;
-    font-size: 1.7em;
+    font-weight: 500; // Increased by @xxxxyu
+    font-size: 1.5em; // Decreased by @xxxxyu
     text-decoration: none;
 }
 

@@ -24,7 +24,7 @@
         #home-banner-header {
             margin: 0;
             margin-block-end: 1rem;
-            font-weight: 550;
+            font-weight: 450; // Decreased by @xxxxyu
             font-size: 2.8rem;
 
             @media only screen and (max-width: 600px) {
@@ -40,11 +40,15 @@
 
             p {
                 font-size: 1rem;
-                font-weight: 300; // Increased by @xxxxyu
+                font-weight: 350; // Increased by @xxxxyu
             }
 
             a {
-                font-weight: 450; // Increased by @xxxxyu
+                font-weight: 500; // Increased by @xxxxyu
+            }
+
+            strong {
+                font-weight: 650;
             }
         }
 

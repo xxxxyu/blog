@@ -1,5 +1,5 @@
 @use '../themes/tabi/sass/parts/_admonitions.scss';
-@use '../themes/tabi/sass/parts/_archive.scss';
+@use 'parts/_archive.scss'; //  Customized
 @use '../themes/tabi/sass/parts/_aside.scss';
 @use '../themes/tabi/sass/parts/_cards.scss';
 @use '../themes/tabi/sass/parts/_code.scss';
@@ -20,7 +20,7 @@
 @use '../themes/tabi/sass/parts/_spoiler.scss';
 @use '../themes/tabi/sass/parts/_syntax_theme.scss';
 @use '../themes/tabi/sass/parts/_table.scss';
-@use '../themes/tabi/sass/parts/_tags.scss';
+@use 'parts/_tags.scss'; //  Customized
 @use '../themes/tabi/sass/parts/_theme-switch.scss';
 @use '../themes/tabi/sass/parts/_zola-error.scss';
 @use '../themes/tabi/sass/parts/_webmention.scss';
@@ -170,6 +170,13 @@ article {
 
     max-width: calc(var(--max-layout-width) - 2*$base-margin);
 
+    // Use serif font for headers too
+    h1,
+    h2,
+    h3,
+    h4,
+    h5,
+    h6,
     p,
     li,
     details,
@@ -219,6 +226,15 @@ article {
             text-decoration: inherit;
         }
 
+        // Custom adjustment for poem contents
+        .poem-content-wrapper {
+            padding-top: 2rem;
+            padding-bottom: 2rem;
+            
+            p {
+                line-height: 1.4rem;
+            }
+        }
     }
 }
 
