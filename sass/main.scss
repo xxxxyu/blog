@@ -49,6 +49,23 @@
     font-display: swap;
 }
 
+// Chinese fonts
+@font-face {
+    src: local('Noto Sans SC'),
+        url('fonts/NotoSansSC-VariableFont_wght.woff2') format("woff2");
+    /* Copyright 2022 The Noto Project Authors (https://github.com/notofonts/latin-greek-cyrillic). Licensed under the SIL Open Font License, Version 1.1. More information available at: http://scripts.sil.org/OFL */
+    font-family: 'Noto Sans SC';
+    font-display: swap;
+}
+
+@font-face {
+    src: local('Noto Serif SC'),
+        url('fonts/NotoSerifSC-VariableFont_wght.woff2') format("woff2");
+    /* Copyright 2022 The Noto Project Authors (https://github.com/notofonts/latin-greek-cyrillic). Licensed under the SIL Open Font License, Version 1.1. More information available at: http://scripts.sil.org/OFL */
+    font-family: 'Noto Serif SC';
+    font-display: swap;
+}
+
 @mixin theme-variables($theme) {
     @if $theme =='light' {
         --background-color: white;
@@ -97,8 +114,9 @@
     // --paragraph-spacing: max(2.3vmin, 24px);
     --paragraph-spacing: max(1.8vmin, 20px);
 
-    --sans-serif-font: 'Inter', Helvetica, Arial, sans-serif;
-    --serif-font: 'Source Serif', 'Georgia', serif;
+    // Only use Noto SC if former fonts don't support, i.e., for Simplified Chinese.
+    --sans-serif-font: 'Inter', Helvetica, Arial, sans-serif, 'Noto Sans SC';
+    --serif-font: 'Source Serif', 'Georgia', serif, 'Noto Serif SC';
     --code-font: 'Cascadia Code';
 
     scrollbar-color: var(--primary-color) transparent;
