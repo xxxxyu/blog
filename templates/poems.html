@@ -29,7 +29,7 @@
     {%- if show_jump -%}
     <div class="title-with-jump bottom-divider">
         <h1 class="title-container section-title">{{ section.title }}</h1>
-        <a href="#posts-list" class="jump-link">{{ macros_translate::translate(key="jump_to_posts", default="Jump to posts", language_strings=language_strings) }} ↓</a>
+        <a href="#posts-list" class="jump-link">{{ macros_translate::translate(key="jump_to_poems", default="Jump to poems", language_strings=language_strings) }} ↓</a>
     </div>
     {%- else -%}
         {{ macros_page_header::page_header(title=section.title) }}
@@ -41,7 +41,8 @@
 
     <div id="posts-list">
         <h2 class="bottom-divider">
-            {{ macros_translate::translate(key="all_posts", default="All posts", language_strings=language_strings) }}
+            All poems
+            <!-- {{ macros_translate::translate(key="all_posts", default="All posts", language_strings=language_strings) }} -->
         </h2>
         {%- if paginator %}
             {%- set pages = paginator.pages -%}
