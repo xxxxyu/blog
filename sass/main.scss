@@ -183,6 +183,7 @@ body {
 
 article {
     $base-margin: 6rem;
+    padding: 0 1rem;
     position: relative;
     margin: 0 auto;
 
@@ -401,7 +402,7 @@ video {
     }
 }
 
-@media all and (min-width: 960px) {
+@media all and (min-width: 1000px) {
     html {
         // font-size: 20px;
         font-size: 18px;
