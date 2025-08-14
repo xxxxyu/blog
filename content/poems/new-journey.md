@@ -16,7 +16,7 @@ officially.
 
 <br>
 
-Into the dreams,
+Into the fears
 
 that I've been dreaming
 
