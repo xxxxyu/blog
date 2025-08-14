@@ -2,7 +2,7 @@
 title = "Latest posts"
 
 [extra]
-header = {title = "Welcome to Xyu's Blog 👋", img = "img/self.jpg", img_alt = "Xiangyu Li" }
+header = {title = "Welcome to Xyu's Blog!", img = "img/xiangyu_1.png", img_alt = "Xiangyu Li" }
 section_path = "posts/_index.md"
 max_posts = 5
 +++
