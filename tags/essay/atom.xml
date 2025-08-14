@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="utf-8"?>
+<?xml-stylesheet href="https://xxxxyu.github.io/blog/feed_style.xsl" type="text/xsl"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xml:lang="en">
+    <tabi:metadata xmlns:tabi="https://github.com/welpo/tabi">
+        <tabi:base_url>https:&#x2F;&#x2F;xxxxyu.github.io&#x2F;blog&#x2F;</tabi:base_url>
+        <tabi:separator>
+            •
+        </tabi:separator>
+        <tabi:about_feeds>This is a web feed, also known as an Atom feed. Subscribe by copying the URL from the address bar into your newsreader. Visit About Feeds to learn more and get started. It&#x27;s free.</tabi:about_feeds>
+        <tabi:visit_the_site>Visit website</tabi:visit_the_site>
+        <tabi:recent_posts>Recent posts</tabi:recent_posts>
+        <tabi:last_updated_on>Updated on $DATE</tabi:last_updated_on>
+        <tabi:default_theme></tabi:default_theme>
+        <tabi:post_listing_date>date</tabi:post_listing_date>
+        <tabi:current_section>Essay</tabi:current_section>
+    </tabi:metadata><title>Xyu's Blog - Essay</title>
+        <subtitle>Blog space for Xyu</subtitle>
+    <link href="https://xxxxyu.github.io/blog/tags/essay/atom.xml" rel="self" type="application/atom+xml"/>
+    <link href="https://xxxxyu.github.io/blog/tags/essay/" rel="alternate" type="text/html"/>
+    <generator uri="https://www.getzola.org/">Zola</generator><updated>2025-08-04T00:00:00+00:00</updated><id>https://xxxxyu.github.io/blog/tags/essay/atom.xml</id><entry xml:lang="en">
+        <title>Reading Notes of Dario Amodei&#x27;s Blog</title>
+        <published>2025-08-02T00:00:00+00:00</published>
+        <updated>2025-08-04T00:00:00+00:00</updated>
+        <author>
+            <name>Xiangyu Li</name>
+        </author>
+        <link rel="alternate" href="https://xxxxyu.github.io/blog/posts/amodei-blog-reading-notes/" type="text/html"/>
+        <id>https://xxxxyu.github.io/blog/posts/amodei-blog-reading-notes/</id>
+        
+            <content type="html">&lt;blockquote&gt;
+&lt;p&gt;This is still in progress — but existing contents are already readable!&lt;&#x2F;p&gt;
+&lt;&#x2F;blockquote&gt;
+&lt;p&gt;Recently I’ve read some blog posts&lt;sup class=&quot;footnote-reference&quot; id=&quot;fr-1-1&quot;&gt;&lt;a href=&quot;#fn-1&quot;&gt;[1]&lt;&#x2F;a&gt;&lt;&#x2F;sup&gt; of &lt;a href=&quot;https:&#x2F;&#x2F;www.darioamodei.com&#x2F;&quot;&gt;Dario Amodei&lt;&#x2F;a&gt;, the CEO of &lt;a href=&quot;https:&#x2F;&#x2F;www.anthropic.com&#x2F;&quot;&gt;Anthropic&lt;&#x2F;a&gt;, and find them very insightful and inspiring to me — a Ph.D. candidate in AI-related fields, and also a deep user of Anthropic’s Claude models.&lt;&#x2F;p&gt;
+&lt;p&gt;Specifically, they broaden my view both academically and industrially, with an interdisciplinary perspective.
+So this is to write down the thoughts that came to me while reading, to not let them slip away.&lt;&#x2F;p&gt;
+&lt;p&gt;Amodei’s posts covered (in my reading order):&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;a href=&quot;https:&#x2F;&#x2F;www.darioamodei.com&#x2F;post&#x2F;on-deepseek-and-export-controls&quot;&gt;&lt;em&gt;On DeepSeek and Export Controls&lt;&#x2F;em&gt;&lt;&#x2F;a&gt; (Jan. 2025)&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;a href=&quot;https:&#x2F;&#x2F;www.darioamodei.com&#x2F;post&#x2F;the-urgency-of-interpretability&quot;&gt;&lt;em&gt;The Urgency of Interpretability&lt;&#x2F;em&gt;&lt;&#x2F;a&gt; (Apr. 2025)&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;a href=&quot;https:&#x2F;&#x2F;www.darioamodei.com&#x2F;essay&#x2F;machines-of-loving-grace&quot;&gt;&lt;em&gt;Machines of Loving Grace&lt;&#x2F;em&gt;&lt;&#x2F;a&gt; (Oct. 2024)&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h2 id=&quot;envisioning-powerful-ai&quot;&gt;Envisioning Powerful AI&lt;&#x2F;h2&gt;
+&lt;p&gt;In &lt;a href=&quot;https:&#x2F;&#x2F;www.darioamodei.com&#x2F;essay&#x2F;machines-of-loving-grace&quot;&gt;&lt;em&gt;Machines of Loving Grace&lt;&#x2F;em&gt;&lt;&#x2F;a&gt;, Amodei discusses a lot about what would &lt;em&gt;“powerful AI”&lt;&#x2F;em&gt; (he uses this phrase as he dislike the term &lt;em&gt;AGI&lt;&#x2F;em&gt;) be like in the future, and how will it change every aspect of our human society in the 5-10 years after its emergence (&lt;em&gt;“it could come as early as 2026”&lt;&#x2F;em&gt; as Amodei predicts). In Amodei’s vision, the powerful AI, which is similar to today’s LLMs in form, but not necessarily the same in implementation, has the following properties in my summarization:&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Super intelligent.&lt;&#x2F;strong&gt; It is &lt;em&gt;“smarter than a Nobel Prize winner”&lt;&#x2F;em&gt; in terms of pure intelligence. For example, it can prove unsolved mathematical theorems and write extremely good novels.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Works with interfaces.&lt;&#x2F;strong&gt; It has all the &lt;em&gt;“interfaces”&lt;&#x2F;em&gt; a human would require to work virtually with, other than just chatting.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Autonomous.&lt;&#x2F;strong&gt; It can autonomously solve given tasks for a long period, with only necessary clarification from human.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Interacts virtually.&lt;&#x2F;strong&gt; It doesn’t have a physical embodiment, but can control (and even create) physical tools through a computer.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Massive amount and high speed.&lt;&#x2F;strong&gt; It has abundant resources (repurposed from training) for massive deployment (e.g., millions of instances), and learns and generates actions much faster than human (e.g., by 10-100×).&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Independent yet cooperative.&lt;&#x2F;strong&gt; The millions of instances can work both independently on unrelated tasks, and cooperatively on one task, with some of them fine-tuned to be especially good at particular tasks (I would call them &lt;em&gt;experts&lt;&#x2F;em&gt;).&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;p&gt;He summarizes this as a &lt;em&gt;“country of geniuses in a datacenter”&lt;&#x2F;em&gt;, which is principally capable of solving very difficult problems very fast, but still limited by several factors from the real world. For example, speed of the outside world, need for data (e.g., in particle physics), intrinsic complexity (e.g., &lt;a href=&quot;https:&#x2F;&#x2F;en.wikipedia.org&#x2F;wiki&#x2F;Three-body_problem&quot;&gt;&lt;em&gt;the three-body problem&lt;&#x2F;em&gt;&lt;&#x2F;a&gt;), constraints from humans (e.g., by laws and people’s willingness), and physical laws (this even limits the density of the digital world by limiting number of transistors per square centimeter and minimum energy per bit erased).&lt;&#x2F;p&gt;
+&lt;p&gt;Therefore, he proposes that we should be talking about &lt;em&gt;“the marginal returns to intelligence”&lt;&#x2F;em&gt;, which is borrowed from the economic term, to conceptualize a world with very powerful AI.
+And all his visions are based on this, with awareness of in what areas, to what extent, and on what timescale does very powerful AI helps.
+This is a refreshing idea to me — we could easily end up with either overly optimistic or overly pessimistic imaginations without a reasonable measurement of the impact of intelligence.&lt;&#x2F;p&gt;
+&lt;p&gt;The above basic assumptions and framework&lt;sup class=&quot;footnote-reference&quot; id=&quot;fr-2-1&quot;&gt;&lt;a href=&quot;#fn-2&quot;&gt;[2]&lt;&#x2F;a&gt;&lt;&#x2F;sup&gt;, although not the main part of &lt;em&gt;Machines of Loving Grace&lt;&#x2F;em&gt;, impress me the most.
+After all, the hardest thing is not to infer a reasonable answer given a solid framework, but to propose the framework.&lt;&#x2F;p&gt;
+&lt;p&gt;He spends the rest of the essay to elaborate on what would happen 5-10 years after the powerful AI comes, in five main aspects: biology and health, neuroscience and mind, economic development and poverty, peace and governance, work and meaning.
+In short, his basic prediction is that &lt;strong&gt;powerful AI will allow us to compress the progress that human would have achieved over the next 50-100 years into 5-10 years&lt;&#x2F;strong&gt;, which he refers to as the &lt;em&gt;“compressed 21st century”&lt;&#x2F;em&gt;. The question is when will that powerful AI actually come.&lt;&#x2F;p&gt;
+&lt;p&gt;In contrast to the &lt;a href=&quot;https:&#x2F;&#x2F;www.darioamodei.com&#x2F;essay&#x2F;machines-of-loving-grace#basic-assumptions-and-framework&quot;&gt;&lt;em&gt;Basic assumptions and framework&lt;&#x2F;em&gt;&lt;&#x2F;a&gt; section, i think some points in the prediction sections, for example, the “liberal democracy vs. authoritarianism” part&lt;sup class=&quot;footnote-reference&quot; id=&quot;fr-3-1&quot;&gt;&lt;a href=&quot;#fn-3&quot;&gt;[3]&lt;&#x2F;a&gt;&lt;&#x2F;sup&gt;, are rather personal.
+It is clear that even within the same analytical framework, different people would have different understanding and imagination on certain issues, based on their unique background and characteristics.
+That’s an important reason why I like to read stuffs by people of different backgrounds, and now I am attempting to keep notes.&lt;&#x2F;p&gt;
+&lt;h2 id=&quot;mechanistic-interpretability-for-safe-ai&quot;&gt;Mechanistic Interpretability for Safe AI&lt;&#x2F;h2&gt;
+&lt;p&gt;As modern AI becomes more and more powerful, towards the “powerful AI” vision discussed above, the question of how to govern powerful AI and ensure it’s &lt;em&gt;safe&lt;&#x2F;em&gt; is gaining increasing importance (and the definition of safety is another big question).
+Technically, some safety mechanisms must be developed for a powerful AI system in the future (when it becomes powerful enough), and interpretability is definitely one of the most important aspects for safety control.
+In &lt;a href=&quot;https:&#x2F;&#x2F;www.darioamodei.com&#x2F;post&#x2F;the-urgency-of-interpretability&quot;&gt;&lt;em&gt;The Urgency of Interpretability&lt;&#x2F;em&gt;&lt;&#x2F;a&gt;, Amodei discusses the importance and history of mechanistic interpretability, and Anthropic’s recent progress on this.&lt;&#x2F;p&gt;
+&lt;p&gt;In my understanding, the reason why interpretability is so important is that unlike conventional systems, which are programed in a definite manner, modern AI (i.e., AI based on deep neural networks) is mostly a &lt;em&gt;blackbox&lt;&#x2F;em&gt; — even people who trained them cannot have a 100% (sometimes not even 1%) clear understanding of why and how they produce certain outputs against some inputs.
+As Amodei quoted from &lt;a href=&quot;https:&#x2F;&#x2F;colah.github.io&#x2F;about.html&quot;&gt;Chris Olah&lt;&#x2F;a&gt;, his co-founder, generative AI systems are &lt;em&gt;“grown”&lt;&#x2F;em&gt; (I like this word) more than they are &lt;em&gt;“built”&lt;&#x2F;em&gt; — their internal mechanisms are &lt;em&gt;emergent&lt;&#x2F;em&gt; rather than directly designed.
+Unfortunately, it is very possible that such “blackbox” (for now) systems will have increasingly huge impact on us humans, until one day it must be transparent and interpretable enough for more various applications.&lt;&#x2F;p&gt;
+&lt;p&gt;Back to &lt;em&gt;mechanistic interpretability&lt;&#x2F;em&gt;, it is a field of &lt;em&gt;reverse-engineering&lt;&#x2F;em&gt; neural networks to understand the specific algorithms and computational mechanisms they learn to implement internally.
+Different from other interpretability approaches that focus on input-output relationships or high-level model behavior, mechanistic interpretability seeks detailed, mechanistic understanding of the system at low level (e.g., in layers and neurons).
+It was first studied on CNNs, and now LLMs.
+Chris Olah, co-founder of Anthropic, has been working on this field since he was at Google and OpenAI.&lt;&#x2F;p&gt;
+&lt;p&gt;Given the example of a LLM, the first step is to find single interpretable neurons&lt;sup class=&quot;footnote-reference&quot; id=&quot;fr-4-1&quot;&gt;&lt;a href=&quot;#fn-4&quot;&gt;[4]&lt;&#x2F;a&gt;&lt;&#x2F;sup&gt;, and then they found that while some neurons were immediately interpretable, the vast majority were an incoherent pastiche of many different words and concepts, which allows the model to express more concepts than it has neurons. They referred to this phenomenon as &lt;em&gt;superposition&lt;&#x2F;em&gt;. To interpret the more complicated superpositions, they adopted a signal-processing-inspired method called &lt;em&gt;sparse autoencoders&lt;&#x2F;em&gt;&lt;sup class=&quot;footnote-reference&quot; id=&quot;fr-5-1&quot;&gt;&lt;a href=&quot;#fn-5&quot;&gt;[5]&lt;&#x2F;a&gt;&lt;&#x2F;sup&gt;, with which they were able to find combinations of neurons that did correspond to cleaner, more human-understandable concepts (even very subtle ones like the concept of “literally or figuratively hedging or hesitating”), which they call &lt;em&gt;features&lt;&#x2F;em&gt;. They were able to find over 30 million features in Claude 3 Sonnet, Anthropic’s medium-sized commercial model, through this method.&lt;&#x2F;p&gt;
+&lt;p&gt;More could be done to understand the model’s working mechanism after finding the features. For example, artificially amplifying neurons related to a feature would significantly affect the model’s behavior (&lt;a href=&quot;https:&#x2F;&#x2F;www.anthropic.com&#x2F;news&#x2F;golden-gate-claude&quot;&gt;“Golden State Claude”&lt;&#x2F;a&gt;); tracking and manipulating groups of features (i.e., &lt;em&gt;circuits&lt;&#x2F;em&gt;&lt;sup class=&quot;footnote-reference&quot; id=&quot;fr-6-1&quot;&gt;&lt;a href=&quot;#fn-6&quot;&gt;[6]&lt;&#x2F;a&gt;&lt;&#x2F;sup&gt;) could help to understand the model’s reasoning process.
+Anthropic’s research blogs &lt;sup class=&quot;footnote-reference&quot; id=&quot;fr-7-1&quot;&gt;&lt;a href=&quot;#fn-7&quot;&gt;[7]&lt;&#x2F;a&gt;&lt;&#x2F;sup&gt; introduce these progresses in more details.&lt;&#x2F;p&gt;
+&lt;p&gt;I appreciate the idea of mechanistic interpretability to “reverse engineer” deep neural networks, including modern LLMs with billions of parameters, as it provides valuable insights about how the AI models works inside.
+It seems on a right track but I doubt if it is the ultimate path towards powerful and safe AI, to catch “bugs” inside a huge neural network — it would be like eliminating cancer cells of a blue whale.
+At least for now, I think our models are still not powerful enough to be “dangerous” — and sure mechanistic interpretability also helps improve this.&lt;&#x2F;p&gt;
+&lt;h2 id=&quot;ai-and-politics&quot;&gt;AI and Politics&lt;&#x2F;h2&gt;
+&lt;p&gt;This is a TODO section (also too large a topic to discuss) — I’ll complete this part when time allows.&lt;&#x2F;p&gt;
+&lt;hr&gt;&lt;ol class=&quot;footnotes-list&quot;&gt;
+&lt;li id=&quot;fn-1&quot;&gt;
+&lt;p&gt;I started from an Chinese article summarizing &lt;a href=&quot;https:&#x2F;&#x2F;www.darioamodei.com&#x2F;post&#x2F;on-deepseek-and-export-controls&quot;&gt;&lt;em&gt;On DeepSeek and Export Controls&lt;&#x2F;em&gt;&lt;&#x2F;a&gt;. Then I read the original English post, and other posts from &lt;a href=&quot;https:&#x2F;&#x2F;www.darioamodei.com&#x2F;&quot;&gt;Amodei’s homepage&lt;&#x2F;a&gt; afterwards. &lt;a href=&quot;#fr-1-1&quot;&gt;↩&lt;&#x2F;a&gt;&lt;&#x2F;p&gt;
+&lt;&#x2F;li&gt;
+&lt;li id=&quot;fn-2&quot;&gt;
+&lt;p&gt;These are summarized from the &lt;a href=&quot;https:&#x2F;&#x2F;www.darioamodei.com&#x2F;essay&#x2F;machines-of-loving-grace#basic-assumptions-and-framework&quot;&gt;&lt;em&gt;Basic assumptions and framework&lt;&#x2F;em&gt;&lt;&#x2F;a&gt; section of the original post. &lt;a href=&quot;#fr-2-1&quot;&gt;↩&lt;&#x2F;a&gt;&lt;&#x2F;p&gt;
+&lt;&#x2F;li&gt;
+&lt;li id=&quot;fn-3&quot;&gt;
+&lt;p&gt;&lt;em&gt;“Twenty years ago US policymakers believed that free trade with China would cause it to liberalize as it became richer; that very much didn’t happen, and we now seem headed for a second cold war with a resurgent authoritarian bloc.”&lt;&#x2F;em&gt; — In the first paragraph of &lt;a href=&quot;https:&#x2F;&#x2F;www.darioamodei.com&#x2F;essay&#x2F;machines-of-loving-grace#4-peace-and-governance&quot;&gt;&lt;em&gt;Peace and governance&lt;&#x2F;em&gt;&lt;&#x2F;a&gt; section. &lt;a href=&quot;#fr-3-1&quot;&gt;↩&lt;&#x2F;a&gt;&lt;&#x2F;p&gt;
+&lt;&#x2F;li&gt;
+&lt;li id=&quot;fn-4&quot;&gt;
+&lt;p&gt;Elhage, Nelson, et al. “Softmax Linear Units.” &lt;em&gt;Transformer Circuits Thread&lt;&#x2F;em&gt;, 27 June 2022, &lt;a href=&quot;https:&#x2F;&#x2F;transformer-circuits.pub&#x2F;2022&#x2F;solu&#x2F;index.html&quot;&gt;https:&#x2F;&#x2F;transformer-circuits.pub&#x2F;2022&#x2F;solu&#x2F;index.html&lt;&#x2F;a&gt;. &lt;a href=&quot;#fr-4-1&quot;&gt;↩&lt;&#x2F;a&gt;&lt;&#x2F;p&gt;
+&lt;&#x2F;li&gt;
+&lt;li id=&quot;fn-5&quot;&gt;
+&lt;p&gt;Bricken, Trenton, et al. “Towards Monosemanticity: Decomposing Language Models With Dictionary Learning.” &lt;em&gt;Transformer Circuits Thread&lt;&#x2F;em&gt;, 4 Oct. 2023, &lt;a href=&quot;https:&#x2F;&#x2F;transformer-circuits.pub&#x2F;2023&#x2F;monosemantic-features&quot;&gt;https:&#x2F;&#x2F;transformer-circuits.pub&#x2F;2023&#x2F;monosemantic-features&lt;&#x2F;a&gt;. &lt;a href=&quot;#fr-5-1&quot;&gt;↩&lt;&#x2F;a&gt;&lt;&#x2F;p&gt;
+&lt;&#x2F;li&gt;
+&lt;li id=&quot;fn-6&quot;&gt;
+&lt;p&gt;Lindsey, Jack, et al. “On the Biology of a Large Language Model.” &lt;em&gt;Transformer Circuits Thread&lt;&#x2F;em&gt;, 27 Mar. 2025, &lt;a href=&quot;https:&#x2F;&#x2F;transformer-circuits.pub&#x2F;2025&#x2F;attribution-graphs&#x2F;biology.html&quot;&gt;https:&#x2F;&#x2F;transformer-circuits.pub&#x2F;2025&#x2F;attribution-graphs&#x2F;biology.html&lt;&#x2F;a&gt;. &lt;a href=&quot;#fr-6-1&quot;&gt;↩&lt;&#x2F;a&gt;&lt;&#x2F;p&gt;
+&lt;&#x2F;li&gt;
+&lt;li id=&quot;fn-7&quot;&gt;
+&lt;p&gt;&lt;a href=&quot;https:&#x2F;&#x2F;www.anthropic.com&#x2F;research&#x2F;mapping-mind-language-model&quot;&gt;&lt;em&gt;Mapping the Mind of a Large Language Model&lt;&#x2F;em&gt;&lt;&#x2F;a&gt;, and &lt;a href=&quot;https:&#x2F;&#x2F;www.anthropic.com&#x2F;research&#x2F;tracing-thoughts-language-model&quot;&gt;&lt;em&gt;Tracing the thoughts of a large language model&lt;&#x2F;em&gt;&lt;&#x2F;a&gt; &lt;a href=&quot;#fr-7-1&quot;&gt;↩&lt;&#x2F;a&gt;&lt;&#x2F;p&gt;
+&lt;&#x2F;li&gt;
+&lt;&#x2F;ol&gt;
+</content>
+        <summary type="html">Reading Notes of Dario Amodei&#x27;s Blog.</summary>
+        </entry>
+</feed>
