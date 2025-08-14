@@ -133,7 +133,7 @@ $padding: 1rem; // Make it compact by @xxxxyu
 }
 
 // Optional: Make the grid more compact for poems
-@media only screen and (min-width: 1000px) {
+@media only screen and (min-width: 800px) { // Decreased from 1000px for better readability @xxxxyu
     .bloglist-container.poem-list {
         grid-template-columns: 1fr 6fr; // Slightly more compact than 1fr 8fr
     }
@@ -141,7 +141,7 @@ $padding: 1rem; // Make it compact by @xxxxyu
 
 // Decreased from 1000px @xxxxyu
 // Original media query for regular blog lists
-@media only screen and (max-width: 1000px) {
+@media only screen and (max-width: 800px) { // Decreased from 1000px for better readability @xxxxyu
     .bloglist-container:not(.poem-list) {
         display: block;
     }

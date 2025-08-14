@@ -30,7 +30,7 @@
     @include column-count(3);
 }
 
-@media (max-width: 1000px) {
+@media (max-width: 800px) { // Decreased from 1000px for better readability @xxxxyu
     .three-columns ul {
         @include column-count(2);
     }

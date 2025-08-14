@@ -106,7 +106,7 @@ Current section extra: {% if current_section %}{{ current_section.extra | json_e
         <h1 class="p-name article-title">
             {{ page.title | markdown(inline=true) | safe }}
         </h1>
-        <a class="u-url u-uid" href="{{ page.permalink | safe }}"></a>
+        <!-- <a class="u-url u-uid" href="{{ page.permalink | safe }}"></a> -->
 
         {#- A page is part of a series if one of the sections above (whether it is transparent or not) has the `extra.series` parameter set to true. -#}
         {#- As a series might be a transparent section in order to mix up its articles with those of the section just above or the root, -#}
@@ -360,5 +360,8 @@ Current section extra: {% if current_section %}{{ current_section.extra | json_e
 </main>
 
 {%- include "partials/extra_features.html" -%}
+
+<!-- Currently, apply half-width for all poem pages, could be optimized (add to extra features) — TODO -->
+<script defer src="{{ get_url(path='js/setHalfWidthArticles.js', trailing_slash=false | safe )}}"></script>
 
 {% endblock main_content %}

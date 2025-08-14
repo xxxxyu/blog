@@ -107,7 +107,7 @@
 :root {
     @include theme-variables('light');
 
-    --max-layout-width: 1000px;
+    --max-layout-width: 800px; // Decreased from 1000px for better readability @xxxxyu
     --normal-layout-width: 600px;
     --medium-layout-width: 400px;
     --small-layout-width: 200px;
@@ -185,7 +185,7 @@ article {
     $base-margin: 6rem;
     padding: 0 1rem;
     position: relative;
-    margin: 0 auto;
+    margin: 1.5rem auto; // Increase from 0 @xxxxyu
 
     max-width: calc(var(--max-layout-width) - 2*$base-margin);
 
@@ -211,6 +211,11 @@ article {
         margin-inline-start: -$base-margin;
         margin-inline-end: -$base-margin;
         max-width: calc(100% + 2*$base-margin);
+    }
+
+    .half-width { // Use it for poems
+        margin-inline-start: 1.5*$base-margin;
+        max-width: calc(100% - 2*$base-margin);
     }
 
     li {
@@ -248,7 +253,6 @@ article {
         // Custom adjustment for poem contents
         .poem-content-wrapper {
             padding-top: 2rem;
-            padding-bottom: 2rem;
             
             p {
                 line-height: 1.4rem;
@@ -351,7 +355,7 @@ video {
     display: none;
 }
 
-@media only screen and (max-width: 1000px) {
+@media only screen and (max-width: 800px) { // Decreased from 1000px for better readability @xxxxyu
     .content {
         max-width: var(--normal-layout-width);
     }
@@ -368,6 +372,13 @@ video {
         overflow-x: auto;
     }
 
+    article .half-width {
+        $base-margin: 6rem;
+
+        margin-inline-start: 1.2*$base-margin;
+        max-width: calc(100% - 1.5*$base-margin);
+    }
+
     .mobile-only {
         display: block;
     }
@@ -382,6 +393,12 @@ video {
     article {
         margin-top: 1.3rem;
     }
+
+    article .half-width {
+        margin-inline-start: 0;
+        max-width: calc(100%);
+    }
+
 
     body {
         margin-inline: 16px;
@@ -402,9 +419,9 @@ video {
     }
 }
 
-@media all and (min-width: 1000px) {
+@media all and (min-width: 800px) { // Decreased from 1000px for better readability @xxxxyu
     html {
         // font-size: 20px;
-        font-size: 18px;
+        font-size: 17px;
     }
 }
