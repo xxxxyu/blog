@@ -1,11 +1,11 @@
 +++
 title = "Enhancing GPTQv2 Format Support in vLLM: Analysis and Implementation"
-date = "2025-10-08"
-updated = "2025-10-08"
+date = "2025-10-12"
+updated = "2025-10-12"
 description = "Deep technical analysis of GPTQv2 format limitations in vLLM, and implementation of CUDA kernel adaptations to enable efficient low-bit/asymmetric quantization inference."
 
 [taxonomies]
-tags = ["vLLM", "Development", "Quantization", "LLM"]
+tags = ["vLLM", "Development", "Quantization", "GPTQ", "LLM"]
 
 [extra]
 quick_navigation_buttons = true
@@ -20,9 +20,9 @@ katex = true
 
 vLLM, one of the leading LLM inference frameworks, currently lacks robust support for **GPTQv2 format** (an upgraded version of GPTQv1 format) models, particularly those using **low-bit (2/3-bit) or asymmetric quantization**. While vLLM doesn't raise explicit errors when loading such models, it incorrectly treats them as GPTQv1 format, resulting in degraded inference quality and characteristic gibberish outputs (consisting of repeated `!!!`, details in [this issue](https://github.com/vllm-project/vllm/issues/26343)).
 
-This limitation stems from differences in zero point handling between GPTQv1 and GPTQv2 checkpoint formats, which vLLM's existing GPTQ GeMM kernels don't account for. This post presents a comprehensive analysis of this limitation, and documents the implementation of kernel adaptations (i.e., in [this PR](https://github.com/vllm-project/vllm/pull/26092), under review), that enable proper GPTQv2 support while maintaining backward compatibility.
+This limitation stems from differences in **zero point handling** between GPTQv1 and GPTQv2 checkpoint formats, which vLLM's existing GPTQ GeMM kernels don't account for. This post presents a comprehensive analysis of this limitation, and documents the implementation of kernel adaptations (i.e., in [this PR](https://github.com/vllm-project/vllm/pull/26092), under review), that enable proper GPTQv2 support while maintaining backward compatibility.
 
-Through careful investigation of vLLM's quantization support and targeted CUDA kernel modifications, I enables  robust inference for GPTQv2 format models, especially low-bit or asymmetric ones, with vLLM — contributing a step forward towards efficient LLM deployment.
+Through careful investigation of vLLM's quantization support and targeted CUDA kernel modifications, I enable robust inference for GPTQv2 format models, especially low-bit or asymmetric ones, with vLLM — contributing a step forward towards efficient LLM deployment.
 
 ## Background and Preliminaries
 
@@ -230,7 +230,7 @@ This post details the development of GPTQv2 format support in vLLM, which addres
 **Possible future works:**
 
 - Extend optimized kernels (Marlin, BitBLAS) to support 2/3-bit or asymmetric quantization.
-- Fixing existing bugs in `gptq_gemm` for 4-bit quantization.
+- Fix existing bugs in `gptq_gemm` for 4-bit quantization.
 
 
 [^1]: Frantar, Elias, et al. "GPTQ: Accurate Post-Training Quantization for Generative Pre-Trained Transformers." arXiv preprint arXiv:2210.17323 (2022).
