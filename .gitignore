@@ -3,3 +3,6 @@ public/
 
 # don't upload the drafts
 content/drafts/
+
+# VS Code
+.vscode/
