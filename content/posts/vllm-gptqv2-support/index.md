@@ -1,7 +1,7 @@
 +++
 title = "Enhancing GPTQv2 Format Support in vLLM: Analysis and Implementation"
 date = "2025-10-12"
-updated = "2025-10-25"
+updated = "2025-10-28"
 description = "Deep technical analysis of GPTQv2 format limitations in vLLM, and implementation of CUDA kernel adaptations to enable efficient low-bit/asymmetric quantization inference."
 
 [taxonomies]
@@ -116,6 +116,7 @@ After all the preparation, we can finally dive into the technical details about 
 - **Performant kernels like Marlin support GPTQv2 format of limited bits and symmetry** — only 4/8-bit symmetric quantization.
 - **Fallback kernels support more bits and symmetry but lacks GPTQv2 format support** — the reason why I encountered the issue.
 
+<!-- markdownlint-disable MD046 -->
 {% mermaid(invertible=false, full_width=false) %}
 graph TD
     A[VllmConfig] --> B[ModelConfig._verify_quantization]
@@ -146,6 +147,7 @@ graph TD
     style S fill:#FFB6C1
 
 {% end %}
+<!-- markdownlint-enable MD046 -->
 
 ### vLLM's Kernel Routing Hierarchy
 
