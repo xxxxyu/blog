@@ -1,0 +1,276 @@
+<?xml version="1.0" encoding="utf-8"?>
+<?xml-stylesheet href="https://xxxxyu.github.io/blog/feed_style.xsl" type="text/xsl"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xml:lang="en">
+    <tabi:metadata xmlns:tabi="https://github.com/welpo/tabi">
+        <tabi:base_url>https:&#x2F;&#x2F;xxxxyu.github.io&#x2F;blog&#x2F;</tabi:base_url>
+        <tabi:separator>
+            •
+        </tabi:separator>
+        <tabi:about_feeds>This is a web feed, also known as an Atom feed. Subscribe by copying the URL from the address bar into your newsreader. Visit About Feeds to learn more and get started. It&#x27;s free.</tabi:about_feeds>
+        <tabi:visit_the_site>Visit website</tabi:visit_the_site>
+        <tabi:recent_posts>Recent posts</tabi:recent_posts>
+        <tabi:last_updated_on>Updated on $DATE</tabi:last_updated_on>
+        <tabi:default_theme></tabi:default_theme>
+        <tabi:post_listing_date>date</tabi:post_listing_date>
+        <tabi:current_section>vLLM</tabi:current_section>
+    </tabi:metadata><title>Xyu's Blog - vLLM</title>
+        <subtitle>Blog space for Xyu</subtitle>
+    <link href="https://xxxxyu.github.io/blog/tags/vllm/atom.xml" rel="self" type="application/atom+xml"/>
+    <link href="https://xxxxyu.github.io/blog/tags/vllm/" rel="alternate" type="text/html"/>
+    <generator uri="https://www.getzola.org/">Zola</generator><updated>2025-10-28T00:00:00+00:00</updated><id>https://xxxxyu.github.io/blog/tags/vllm/atom.xml</id><entry xml:lang="en">
+        <title>Enhancing GPTQv2 Format Support in vLLM: Analysis and Implementation</title>
+        <published>2025-10-12T00:00:00+00:00</published>
+        <updated>2025-10-28T00:00:00+00:00</updated>
+        <author>
+            <name>Xiangyu Li</name>
+        </author>
+        <link rel="alternate" href="https://xxxxyu.github.io/blog/posts/vllm-gptqv2-support/" type="text/html"/>
+        <id>https://xxxxyu.github.io/blog/posts/vllm-gptqv2-support/</id>
+        
+            <content type="html">&lt;blockquote&gt;
+&lt;p&gt;Issue (closed): &lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;vllm-project&#x2F;vllm&#x2F;issues&#x2F;26343&quot;&gt;#26343&lt;&#x2F;a&gt; &lt;br &#x2F;&gt;
+Pull request (merged): &lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;vllm-project&#x2F;vllm&#x2F;pull&#x2F;26092&quot;&gt;#26092&lt;&#x2F;a&gt; &lt;br &#x2F;&gt;
+Commit: &lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;vllm-project&#x2F;vllm&#x2F;commit&#x2F;5cc6bddb6ef5e8e5c10de8122a43fd6e8c1e3b4b&quot;&gt;&lt;code&gt;5cc6bdd&lt;&#x2F;code&gt;&lt;&#x2F;a&gt;&lt;&#x2F;p&gt;
+&lt;&#x2F;blockquote&gt;
+&lt;h2 id=&quot;introduction&quot;&gt;Introduction&lt;&#x2F;h2&gt;
+&lt;p&gt;vLLM, one of the leading LLM inference frameworks, currently lacks robust support for &lt;strong&gt;GPTQv2 format&lt;&#x2F;strong&gt; (an upgraded version of GPTQv1 format) models, particularly those using &lt;strong&gt;low-bit (2&#x2F;3-bit) or asymmetric quantization&lt;&#x2F;strong&gt;. While vLLM doesn’t raise explicit errors when loading such models, it incorrectly treats them as GPTQv1 format, resulting in degraded inference quality and characteristic gibberish outputs (consisting of repeated &lt;code&gt;!!!&lt;&#x2F;code&gt;, details in &lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;vllm-project&#x2F;vllm&#x2F;issues&#x2F;26343&quot;&gt;this issue&lt;&#x2F;a&gt;).&lt;&#x2F;p&gt;
+&lt;p&gt;This limitation stems from differences in &lt;strong&gt;zero point handling&lt;&#x2F;strong&gt; between GPTQv1 and GPTQv2 checkpoint formats, which vLLM’s existing GPTQ GeMM kernels don’t account for. This post presents a comprehensive analysis of this limitation, and documents the implementation of kernel adaptations (i.e., in &lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;vllm-project&#x2F;vllm&#x2F;pull&#x2F;26092&quot;&gt;this PR&lt;&#x2F;a&gt;), that enable proper GPTQv2 support while maintaining backward compatibility.&lt;&#x2F;p&gt;
+&lt;p&gt;Through careful investigation of vLLM’s quantization support and targeted CUDA kernel modifications, I enable robust inference for GPTQv2 format models, especially low-bit or asymmetric ones, with vLLM — contributing a step forward towards efficient LLM deployment.&lt;&#x2F;p&gt;
+&lt;h2 id=&quot;background-and-preliminaries&quot;&gt;Background and Preliminaries&lt;&#x2F;h2&gt;
+&lt;p&gt;In my case, I use vLLM to serve some low-bit (e.g., 2-bit), asymmetrically quantized models, stored in GPTQv2 format, and encountered &lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;vllm-project&#x2F;vllm&#x2F;issues&#x2F;26343&quot;&gt;this issue&lt;&#x2F;a&gt;.&lt;&#x2F;p&gt;
+&lt;p&gt;Before diving into technical details, I’ll briefly introduce the background to do so (e.g., why GPTQv2), and some preliminaries (e.g., the checkpoint format) to help follow the technical parts. &lt;strong&gt;Key takeaways:&lt;&#x2F;strong&gt;&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Asymmetric quantization benefits low-bit quantization&lt;&#x2F;strong&gt;, by adjusting the zero point for each group of weights.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;GPTQv2 format outperforms GPTQv1 in asymmetric quantization&lt;&#x2F;strong&gt;, by better preserving zero point information.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h3 id=&quot;weight-quantization-of-llms&quot;&gt;Weight Quantization of LLMs&lt;&#x2F;h3&gt;
+&lt;p&gt;Weight quantization that quantizes high-precision model weights (e.g., 16&#x2F;32-bit) into fewer bits (e.g., 2&#x2F;3&#x2F;4&#x2F;8-bit) has been a common practice in LLM deployment, especially in resource-constrained scenarios.&lt;&#x2F;p&gt;
+&lt;p&gt;Technically, weight quantization maps the large range of high-precision weights (e.g., within $[-65504, 65504]$ for FP16) into a limited range of quantized weights (e.g., $[0, 2^b - 1]$ for $b$-bit unsigned integer).
+This mapping typically involves a scaling factor ($scale$) that compresses the range, and a bias ($zero$) that shifts the zero point. We denote $w_o$ as the original weight within the range $[w_{min}, w_{max}]$ (usually for a group of weights), and $w_q$ as the quantized weight. Then, a simple $b$-bit integer quantization is formulated as:&lt;&#x2F;p&gt;
+&lt;p&gt;\[
+scale = \frac{w_{max} - w_{min}}{2^b - 1}
+\]&lt;&#x2F;p&gt;
+&lt;p&gt;\[
+zero = - \mathrm{round}(\frac{w_{min}}{scale})
+\]&lt;&#x2F;p&gt;
+&lt;p&gt;\[
+w_q = \mathrm{clamp}(\mathrm{round}(\frac{w_o}{scale}) + zero)
+\]&lt;&#x2F;p&gt;
+&lt;p&gt;To recover the original weight $\hat{w}_o$ during dequantization:&lt;&#x2F;p&gt;
+&lt;p&gt;\[
+\hat{w}_o = (w_q - zero) \cdot scale
+\]&lt;&#x2F;p&gt;
+&lt;p&gt;Based on this formulation, quantization methods are categorized by whether the zero point is required:&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;em&gt;Symmetric quantization&lt;&#x2F;em&gt; assumes $w_{max} = - w_{min}$, so $zero = - \mathrm{round}(\frac{2^b - 1}{2})$ will not change. In this case, $zero$ doesn’t provide additional information given the quantization bits.&lt;&#x2F;p&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;em&gt;Asymmetric quantization&lt;&#x2F;em&gt; doesn’t have such assumption. So $zero$ varies across groups of weights, and is necessary for accurately recovering the original weights.&lt;&#x2F;p&gt;
+&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;p&gt;Note that most GPTQ implementations are 4-bit symmetric quantization. However, to reduce the quantization error in lower bits, asymmetric quantization is necessary.&lt;&#x2F;p&gt;
+&lt;h3 id=&quot;gptq-quantization-and-checkpoint-format&quot;&gt;GPTQ: Quantization and Checkpoint Format&lt;&#x2F;h3&gt;
+&lt;p&gt;GPTQ&lt;sup class=&quot;footnote-reference&quot; id=&quot;fr-1-1&quot;&gt;&lt;a href=&quot;#fn-1&quot;&gt;[1]&lt;&#x2F;a&gt;&lt;&#x2F;sup&gt; is one of the most popular post-training &lt;strong&gt;quantization methods&lt;&#x2F;strong&gt; for generative transformers (mainly LLMs and VLMs).
+It utilizes approximate second-order information (inverse layer Hessian) to reduce quantization errors.
+Besides, GPTQ could also refer to the specific &lt;strong&gt;checkpoint format&lt;&#x2F;strong&gt; adopted by GPTQ-quantized models (e.g., by &lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;AutoGPTQ&#x2F;AutoGPTQ&quot;&gt;AutoGPTQ&lt;&#x2F;a&gt;), with details explained in &lt;a href=&quot;https:&#x2F;&#x2F;danieldk.eu&#x2F;GPTQ-Checkpoint-Format&quot;&gt;this blog&lt;&#x2F;a&gt;.&lt;&#x2F;p&gt;
+&lt;p&gt;GPTQ is widely supported by the community, including 1) quantization libraries that implement the GPTQ quantization method or support exporting to GPTQ format (although not implementing the quantization method), and 2) kernel libraries and inference frameworks that support inference with models of the GPTQ checkpoint format, as listed below:&lt;&#x2F;p&gt;
+&lt;p&gt;Quantization libraries:&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;ModelCloud&#x2F;GPTQModel&quot;&gt;GPTQModel&lt;&#x2F;a&gt; is now the 1st choice for GPTQ quantization in replacement of AutoGPTQ, with richer model and backend support.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;AutoGPTQ&#x2F;AutoGPTQ&quot;&gt;AutoGPTQ&lt;&#x2F;a&gt; was the most popular library for GPTQ quantization, and is unmaintained now.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;IST-DASLab&#x2F;gptq&quot;&gt;gptq&lt;&#x2F;a&gt; is the official code implementation of the GPTQ paper.&lt;&#x2F;li&gt;
+&lt;li&gt;Many other libraries implement GPTQ quantization, or support to save quantized models in GPTQ format.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;p&gt;Computing (CUDA) kernels:&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;IST-DASLab&#x2F;marlin&quot;&gt;Marlin&lt;&#x2F;a&gt; is the SOTA W4A16 mpGeMM kernel supporting 4-bit GPTQ models.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;turboderp-org&#x2F;exllamav2&quot;&gt;ExLlamaV2&lt;&#x2F;a&gt; is an inference library with high-performance kernels for GPTQ models.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;microsoft&#x2F;BitBLAS&quot;&gt;BitBLAS&lt;&#x2F;a&gt; is a high-performance low-bit mpGeMM kernel library supporting GPTQ models.&lt;&#x2F;li&gt;
+&lt;li&gt;Similarly, many other kernel libraries support GPTQ format models.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;p&gt;SOTA LLM inference frameworks, including &lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;vllm-project&#x2F;vllm&quot;&gt;vLLM&lt;&#x2F;a&gt;, are integrated with the above quantization and kernel libraries, to support efficient LLM deployment with GPTQ quantization.&lt;&#x2F;p&gt;
+&lt;h3 id=&quot;from-gptqv1-to-gptqv2&quot;&gt;From GPTQv1 to GPTQv2&lt;&#x2F;h3&gt;
+&lt;p&gt;GPTQv2 is an upgraded version of GPTQ (by a different team though), in both the quantization method and checkpoint format. Specifically:&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;Quantization method: GPTQv2 (also called GPTAQ) introduces asymmetric calibration, which effectively reduces the quantization error accumulated in previous layers&lt;sup class=&quot;footnote-reference&quot; id=&quot;fr-2-1&quot;&gt;&lt;a href=&quot;#fn-2&quot;&gt;[2]&lt;&#x2F;a&gt;&lt;&#x2F;sup&gt;. It’s first implemented in &lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;Intelligent-Computing-Lab-Panda&#x2F;GPTAQ&quot;&gt;GPTAQ&lt;&#x2F;a&gt;, and then integrated to &lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;ModelCloud&#x2F;GPTQModel&quot;&gt;GPTQModel&lt;&#x2F;a&gt; (enabled by setting &lt;code&gt;v2=True&lt;&#x2F;code&gt;).&lt;&#x2F;li&gt;
+&lt;li&gt;Checkpoint format: GPTQv2 format stores the zero points differently with GPTQv1 (i.e., GPTQ) format — GPTQv1 stores $\mathrm{clamp}(zero - 1)$ in the checkpoint, and requires adding $1$ back before dequantization at runtime&lt;sup class=&quot;footnote-reference&quot; id=&quot;fr-3-1&quot;&gt;&lt;a href=&quot;#fn-3&quot;&gt;[3]&lt;&#x2F;a&gt;&lt;&#x2F;sup&gt;. GPTQv2 stores the exact $zero$ value, and doesn’t require extra runtime adjustment. It is also supported by &lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;ModelCloud&#x2F;GPTQModel&quot;&gt;GPTQModel&lt;&#x2F;a&gt; (enabled by setting &lt;code&gt;format=&quot;gptq_v2&quot;&lt;&#x2F;code&gt;).&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;p&gt;Just like GPTQv1, the quantization method and checkpoint format are not coupled. So you can:&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;Store a non-GPTQ-quantized model in GPTQv2 format, like &lt;a href=&quot;https:&#x2F;&#x2F;huggingface.co&#x2F;BitDistiller&#x2F;Qwen-8B-w2g64-gptq&quot;&gt;BitDistiller&#x2F;Qwen-8B-w2g64-gptq&lt;&#x2F;a&gt;.&lt;&#x2F;li&gt;
+&lt;li&gt;Store a GPTQv1-quantized model in GPTQv2 format, by setting &lt;code&gt;format=&quot;gptq_v2&quot;&lt;&#x2F;code&gt; only, in GPTQModel.&lt;&#x2F;li&gt;
+&lt;li&gt;Store a GPTQv2-quantized model in GPTQv1 format, by setting &lt;code&gt;v2=True&lt;&#x2F;code&gt; only, in GPTQModel.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;p&gt;Note that the conversion between GPTQv2 and GPTQv1 format is &lt;strong&gt;irreversible&lt;&#x2F;strong&gt; — you can convert GPTQv1 to GPTQv2 losslessly, but not from GPTQv2 to GPTQv1. This is due to the “-1” issue of GPTQv1 as mentioned above. In this way, the actual zero point range in suppressed by clamping $0 - 1$ to $0$ in GPTQv1. For example, in INT2 quantization, the effective range shrinks from $[0,3]$ to $[1,3]$.
+Therefore, &lt;strong&gt;GPTQv2 format is a preferable choice in asymmetric quantization, especially for low-bit quantization.&lt;&#x2F;strong&gt;&lt;&#x2F;p&gt;
+&lt;h2 id=&quot;cause-analysis&quot;&gt;Cause Analysis&lt;&#x2F;h2&gt;
+&lt;p&gt;After all the preparation, we can finally dive into the technical details about why and how vLLM fails for GPTQv2 in my case — even though it has some sort of support actually, which I found after careful investigation. &lt;strong&gt;Key takeaways:&lt;&#x2F;strong&gt;&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;vLLM has several GPTQ-compatible GeMM kernels with pre-defined priorities&lt;&#x2F;strong&gt; — Marlin, BitBLAS, and fallbacks.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Performant kernels like Marlin support GPTQv2 format of limited bits and symmetry&lt;&#x2F;strong&gt; — only 4&#x2F;8-bit symmetric quantization.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Fallback kernels support more bits and symmetry but lacks GPTQv2 format support&lt;&#x2F;strong&gt; — the reason why I encountered the issue.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;!-- markdownlint-disable MD046 --&gt;
+
+
+&lt;noscript&gt;
+    &lt;strong&gt;⚠️ JavaScript is required to render the diagram.&lt;&#x2F;strong&gt;
+&lt;&#x2F;noscript&gt;
+&lt;pre class=&quot;mermaid&quot;&gt;
+    graph TD
+    A[VllmConfig] --&gt; B[ModelConfig._verify_quantization]
+
+    B --&gt; |&quot;Priority: gptq_marlin &gt; gptq_bitblas &gt; gptq&quot;| E[QuantizationConfig.get_quant_method]
+    
+    E --&gt;|4&#x2F;8-bit + sym| J[GPTQMarlinLinearMethod]
+    E --&gt;|4&#x2F;8-bit + sym| K[GPTQBitBLASLinearMethod]
+    E --&gt;|2&#x2F;3&#x2F;4&#x2F;8-bit + sym&#x2F;asym| L[GPTQLinearMethod]
+    
+    J --&gt; JJ[MarlinLinearKernel]
+    K --&gt; KK[BitBLASLinearKernel]
+    L --&gt; LL[Direct Kernel Call]
+    
+    JJ --&gt; M[gptq_marlin_gemm&lt;br&#x2F;&gt;CUDA kernel]
+    KK --&gt; N[bitblas.Matmul&lt;br&#x2F;&gt;External library]
+    LL --&gt; O[gptq_gemm&lt;br&#x2F;&gt;CUDA kernel]
+    
+    M --&gt; Q[&quot;✅ Marlin: gptq&#x2F;gptq_v2&quot;]
+    N --&gt; R[&quot;✅ BitBLAS: gptq&#x2F;gptq_v2&quot;] 
+    O --&gt; S[&quot;❌ GPTQ: gptq only&quot;]
+    
+    style J fill:#90EE90
+    style K fill:#90EE90
+    style L fill:#FFB6C1
+    style Q fill:#90EE90
+    style R fill:#90EE90
+    style S fill:#FFB6C1
+&lt;&#x2F;pre&gt;
+&lt;!-- markdownlint-enable MD046 --&gt;
+&lt;h3 id=&quot;vllm-s-kernel-routing-hierarchy&quot;&gt;vLLM’s Kernel Routing Hierarchy&lt;&#x2F;h3&gt;
+&lt;p&gt;The first step is to understand how vLLM routes computing kernels for different quantizations, like GPTQ. This is implemented in the model execution part of the &lt;a href=&quot;https:&#x2F;&#x2F;docs.vllm.ai&#x2F;en&#x2F;stable&#x2F;design&#x2F;arch_overview.html#llm-engine&quot;&gt;LLMEngine&lt;&#x2F;a&gt;. For simplicity, we only consider dense models (no MoE). It includes the following calling hierarchy:&lt;&#x2F;p&gt;
+&lt;p&gt;&lt;strong&gt;1. Model-level quantization configuration:&lt;&#x2F;strong&gt;&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;In model implementations (&lt;code&gt;vllm&#x2F;model_executor&#x2F;models&lt;&#x2F;code&gt;), &lt;code&gt;vllm_config: VllmConfig&lt;&#x2F;code&gt; is passed to the model at initialization, which contains &lt;code&gt;quant_config: QuantizationConfig&lt;&#x2F;code&gt;.
+&lt;ul&gt;
+&lt;li&gt;Each quantization extends &lt;code&gt;QuantizationConfig&lt;&#x2F;code&gt; with quantization-specific overrides (e.g., &lt;code&gt;GPTQConfig&lt;&#x2F;code&gt;). See &lt;a href=&quot;https:&#x2F;&#x2F;docs.vllm.ai&#x2F;en&#x2F;stable&#x2F;api&#x2F;vllm&#x2F;model_executor&#x2F;layers&#x2F;quantization&#x2F;index.html&quot;&gt;all quantizations&lt;&#x2F;a&gt;.&lt;&#x2F;li&gt;
+&lt;li&gt;If no quantization is specified in &lt;code&gt;quant_config&lt;&#x2F;code&gt;, &lt;code&gt;ModelConfig._verify_quantization&lt;&#x2F;code&gt; will select one from a priority list (see &lt;a href=&quot;https:&#x2F;&#x2F;xxxxyu.github.io&#x2F;blog&#x2F;posts&#x2F;vllm-gptqv2-support&#x2F;#vllm-gptq-support-notes&quot;&gt;below&lt;&#x2F;a&gt;).&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;Each linear module of this model is initialized with &lt;code&gt;quant_config&lt;&#x2F;code&gt;.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;p&gt;&lt;strong&gt;2. Layer-level quantization configuration (linear methods):&lt;&#x2F;strong&gt;&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;At initialization, each quantized linear module determines &lt;code&gt;quant_method = quant_config.get_quant_method&lt;&#x2F;code&gt;.
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;get_quant_method&lt;&#x2F;code&gt; returns a specific linear method class (inherited from &lt;code&gt;LinearMethodBase&lt;&#x2F;code&gt;, e.g., &lt;code&gt;GPTQLinearMethod&lt;&#x2F;code&gt;) depending on the quantization configuration.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;Each linear module calls the computing kernel by overriding &lt;code&gt;LinearMethodBase.apply&lt;&#x2F;code&gt; (e.g., &lt;code&gt;GPTQLinearMethod.apply&lt;&#x2F;code&gt; calls &lt;code&gt;gptq_gemm&lt;&#x2F;code&gt;).&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;p&gt;&lt;strong&gt;3. (Optional) Kernel selection (linear kernels):&lt;&#x2F;strong&gt;&lt;&#x2F;p&gt;
+&lt;p&gt;vLLM supports several ways of routing to low-level CUDA kernels from a linear method class:&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;Direct calling. For example, &lt;code&gt;GPTQLinearMethod&lt;&#x2F;code&gt; directly routes to &lt;code&gt;gptq_gemm&lt;&#x2F;code&gt;, a registered custom operand of vLLM (implemented in &lt;code&gt;csrc&#x2F;quantization&#x2F;gptq&lt;&#x2F;code&gt;).&lt;&#x2F;li&gt;
+&lt;li&gt;Indirect calling. When multiple kernels are available for a linear method, or a kernel is available for multiple linear methods, vLLM supports extending the &lt;code&gt;MPLinearKernel&lt;&#x2F;code&gt; class as an interface for routing to this kernel (in &lt;code&gt;vllm&#x2F;model_executor&#x2F;layers&#x2F;quantization&#x2F;kernels&#x2F;mixed_precision&lt;&#x2F;code&gt;). For example, &lt;code&gt;GPTQBitBLASLinearMethod&lt;&#x2F;code&gt; routes to &lt;code&gt;BitBLASLinearKernel&lt;&#x2F;code&gt;, and &lt;code&gt;GPTQMarlinLinearMethod&lt;&#x2F;code&gt; calls &lt;code&gt;choose_mp_linear_kernel&lt;&#x2F;code&gt; for flexible routing.&lt;&#x2F;li&gt;
+&lt;li&gt;External calling (orthogonal to the above). vLLM supports calling kernels from external libraries. For example, &lt;code&gt;BitBLASLinearKernel&lt;&#x2F;code&gt; calls &lt;code&gt;Matmul&lt;&#x2F;code&gt; from the &lt;code&gt;bitblas&lt;&#x2F;code&gt; Python library.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h3 id=&quot;vllm-s-support-for-gptq-v2-format&quot;&gt;vLLM’s Support for GPTQ(v2) Format&lt;&#x2F;h3&gt;
+&lt;p&gt;vLLM integrates several optimized kernels for GPTQ format models, as listed in &lt;a href=&quot;https:&#x2F;&#x2F;xxxxyu.github.io&#x2F;blog&#x2F;posts&#x2F;vllm-gptqv2-support&#x2F;#gptq-quantization-and-checkpoint-format&quot;&gt;GPTQ: Quantization and Checkpoint Format&lt;&#x2F;a&gt;, including Marlin, ExLlamaV2, BitBLAS, etc. vLLM also has fallback kernels for unsupported quantization configurations of these kernels. Following the analysis in &lt;a href=&quot;https:&#x2F;&#x2F;xxxxyu.github.io&#x2F;blog&#x2F;posts&#x2F;vllm-gptqv2-support&#x2F;#vllm-s-kernel-routing-hierarchy&quot;&gt;vLLM’s Kernel Routing Hierarchy&lt;&#x2F;a&gt;, I summarize this support matrix (by linear methods):&lt;&#x2F;p&gt;
+&lt;table&gt;&lt;thead&gt;&lt;tr&gt;&lt;th&gt;Method&lt;&#x2F;th&gt;&lt;th&gt;Bits&lt;&#x2F;th&gt;&lt;th&gt;Sym&lt;&#x2F;th&gt;&lt;th&gt;GPTQ Format&lt;&#x2F;th&gt;&lt;&#x2F;tr&gt;&lt;&#x2F;thead&gt;&lt;tbody&gt;
+&lt;tr&gt;&lt;td&gt;GPTQMarlin&lt;&#x2F;td&gt;&lt;td&gt;4,8&lt;&#x2F;td&gt;&lt;td&gt;True&lt;&#x2F;td&gt;&lt;td&gt;&lt;code&gt;gptq, gptq_v2&lt;&#x2F;code&gt;&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;GPTQBitBLAS&lt;&#x2F;td&gt;&lt;td&gt;4,8&lt;&#x2F;td&gt;&lt;td&gt;True&lt;&#x2F;td&gt;&lt;td&gt;&lt;code&gt;gptq, gptq_v2&lt;&#x2F;code&gt;&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;GPTQ&lt;&#x2F;td&gt;&lt;td&gt;2,3,4,8&lt;&#x2F;td&gt;&lt;td&gt;Any&lt;&#x2F;td&gt;&lt;td&gt;&lt;code&gt;gptq&lt;&#x2F;code&gt;&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;&#x2F;tbody&gt;&lt;&#x2F;table&gt;
+&lt;p&gt;&lt;a id=&quot;vllm-gptq-support-notes&quot;&gt;&lt;&#x2F;a&gt;&lt;&#x2F;p&gt;
+&lt;p&gt;Notes:&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;All methods support 4&#x2F;8-bit symmetric quantization. vLLM selects the most performant method supported by the current configuration, according to predefined priorities of quantization overrides (in &lt;code&gt;ModelConfig._verify_quantization&lt;&#x2F;code&gt;):&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;pre data-lang=&quot;py&quot; class=&quot;language-py z-code&quot;&gt;&lt;code class=&quot;language-py&quot; data-lang=&quot;py&quot;&gt;&lt;span class=&quot;z-source z-python&quot;&gt;&lt;span class=&quot;z-meta z-qualified-name z-python&quot;&gt;&lt;span class=&quot;z-meta z-generic-name z-python&quot;&gt;overrides&lt;&#x2F;span&gt;&lt;&#x2F;span&gt; &lt;span class=&quot;z-keyword z-operator z-assignment z-python&quot;&gt;=&lt;&#x2F;span&gt; &lt;span class=&quot;z-meta z-sequence z-list z-python&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-sequence z-begin z-python&quot;&gt;[&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-python&quot;&gt;&lt;span class=&quot;z-meta z-sequence z-list z-python&quot;&gt;                &lt;span class=&quot;z-constant z-language z-python&quot;&gt;...&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-python&quot;&gt;&lt;span class=&quot;z-meta z-sequence z-list z-python&quot;&gt;                &lt;span class=&quot;z-comment z-line z-number-sign z-python&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-comment z-python&quot;&gt;#&lt;&#x2F;span&gt; gptq_marlin_24 requires special format,
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-python&quot;&gt;&lt;span class=&quot;z-meta z-sequence z-list z-python&quot;&gt;                &lt;span class=&quot;z-comment z-line z-number-sign z-python&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-comment z-python&quot;&gt;#&lt;&#x2F;span&gt; so we don&amp;#39;t consider here.
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-python&quot;&gt;&lt;span class=&quot;z-meta z-sequence z-list z-python&quot;&gt;                &lt;span class=&quot;z-meta z-string z-python&quot;&gt;&lt;span class=&quot;z-string z-quoted z-double z-python&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-string z-begin z-python&quot;&gt;&amp;quot;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-string z-python&quot;&gt;&lt;span class=&quot;z-string z-quoted z-double z-python&quot;&gt;gptq_marlin_24&lt;span class=&quot;z-punctuation z-definition z-string z-end z-python&quot;&gt;&amp;quot;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-separator z-sequence z-python&quot;&gt;,&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-python&quot;&gt;&lt;span class=&quot;z-meta z-sequence z-list z-python&quot;&gt;                &lt;span class=&quot;z-comment z-line z-number-sign z-python&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-comment z-python&quot;&gt;#&lt;&#x2F;span&gt; Priority: gptq_marlin &amp;gt; gptq_bitblas &amp;gt; gptq.
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-python&quot;&gt;&lt;span class=&quot;z-meta z-sequence z-list z-python&quot;&gt;                &lt;span class=&quot;z-meta z-string z-python&quot;&gt;&lt;span class=&quot;z-string z-quoted z-double z-python&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-string z-begin z-python&quot;&gt;&amp;quot;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-string z-python&quot;&gt;&lt;span class=&quot;z-string z-quoted z-double z-python&quot;&gt;gptq_marlin&lt;span class=&quot;z-punctuation z-definition z-string z-end z-python&quot;&gt;&amp;quot;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-separator z-sequence z-python&quot;&gt;,&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-python&quot;&gt;&lt;span class=&quot;z-meta z-sequence z-list z-python&quot;&gt;                &lt;span class=&quot;z-meta z-string z-python&quot;&gt;&lt;span class=&quot;z-string z-quoted z-double z-python&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-string z-begin z-python&quot;&gt;&amp;quot;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-string z-python&quot;&gt;&lt;span class=&quot;z-string z-quoted z-double z-python&quot;&gt;gptq_bitblas&lt;span class=&quot;z-punctuation z-definition z-string z-end z-python&quot;&gt;&amp;quot;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-separator z-sequence z-python&quot;&gt;,&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-python&quot;&gt;&lt;span class=&quot;z-meta z-sequence z-list z-python&quot;&gt;                &lt;span class=&quot;z-constant z-language z-python&quot;&gt;...&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-python&quot;&gt;&lt;span class=&quot;z-meta z-sequence z-list z-python&quot;&gt;            &lt;span class=&quot;z-punctuation z-section z-sequence z-end z-python&quot;&gt;]&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
+&lt;ul&gt;
+&lt;li&gt;Only &lt;code&gt;GPTQLinearMethod&lt;&#x2F;code&gt; supports 2&#x2F;3-bit quantization and asymmetric quantization. However, it lacks GPTQv2 support (both the other two supports).&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;p&gt;As a result, neither 2&#x2F;3-bit nor asymmetric quantization in GPTQv2 format are unsupported by vLLM, which motivates &lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;vllm-project&#x2F;vllm&#x2F;pull&#x2F;26092&quot;&gt;this PR&lt;&#x2F;a&gt;.&lt;&#x2F;p&gt;
+&lt;h2 id=&quot;solution&quot;&gt;Solution&lt;&#x2F;h2&gt;
+&lt;p&gt;Based on the above analysis, vLLM’s GPTQ linear methods lack support for 2&#x2F;3-bit quantization and asymmetric quantization in GPTQv2 format, and require adaption to robustly support GPTQv2 format models of various configurations.&lt;&#x2F;p&gt;
+&lt;h3 id=&quot;approach-adapt-gptq-linear-method-kernel&quot;&gt;Approach: Adapt GPTQ Linear Method &amp;amp; Kernel&lt;&#x2F;h3&gt;
+&lt;p&gt;To add such support, at least one linear method should be added&#x2F;adapted. To adapt existing linear methods:&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;GPTQMarlinLinearMethod&lt;&#x2F;code&gt; (lacking 2&#x2F;3-bit and asymmetric support): It requires also modifying vLLM’s Marlin CUDA kernel, which is dedicated for 4&#x2F;8-bit symmetric quantization — not a good choice.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;code&gt;GPTQBitBLASLinearMethod&lt;&#x2F;code&gt; (lacking 2&#x2F;3-bit and asymmetric support): It requires modifying only the linear method&#x2F;kernel (Python code), since the &lt;code&gt;bitblas&lt;&#x2F;code&gt; library itself supports the &lt;code&gt;bits&lt;&#x2F;code&gt; and &lt;code&gt;sym&lt;&#x2F;code&gt; we want — a reasonable choice, but requires the optional &lt;code&gt;bitblas&lt;&#x2F;code&gt; package to be installed.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;code&gt;GPTQLinearMethod&lt;&#x2F;code&gt; (lacking GPTQv2 format support): It requires also modifying vLLM’s &lt;code&gt;gptq_gemm&lt;&#x2F;code&gt; CUDA kernel, by only adapting the zero point handling logic — preferred.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;p&gt;So, the plan is to adapt &lt;code&gt;GPTQLinearMethod&lt;&#x2F;code&gt; (with &lt;code&gt;GPTQConfig&lt;&#x2F;code&gt;) and &lt;code&gt;gptq_gemm&lt;&#x2F;code&gt; to add proper GPTQv2 format support.&lt;&#x2F;p&gt;
+&lt;h3 id=&quot;details-of-adaption-conditioned-on-format&quot;&gt;Details of Adaption: Conditioned on Format&lt;&#x2F;h3&gt;
+&lt;p&gt;During this linear method &amp;amp; kernel adaption, there are 3 points to keep in mind:&lt;&#x2F;p&gt;
+&lt;ol&gt;
+&lt;li&gt;Maintain compatibility for GPTQv1 format.&lt;&#x2F;li&gt;
+&lt;li&gt;Keep the code and binary size impact down.&lt;&#x2F;li&gt;
+&lt;li&gt;Make sure other kernels (e.g., Marlin) are not running with GPTQv2 incorrectly.&lt;&#x2F;li&gt;
+&lt;&#x2F;ol&gt;
+&lt;p&gt;In response to Pt. 1 and 2:&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;Add a &lt;code&gt;use_v2_format: bool&lt;&#x2F;code&gt; attribute to &lt;code&gt;GPTQLinearMethod&lt;&#x2F;code&gt; that indicates whether &lt;code&gt;checkpoint_format == &quot;gptq_v2&quot;&lt;&#x2F;code&gt;.&lt;&#x2F;li&gt;
+&lt;li&gt;Add a &lt;code&gt;bool use_v2_format&lt;&#x2F;code&gt; argument to &lt;code&gt;gptq_gemm&lt;&#x2F;code&gt;, which accepts &lt;code&gt;GPTQLinearMethod.use_v2_format&lt;&#x2F;code&gt; as input.&lt;&#x2F;li&gt;
+&lt;li&gt;In &lt;code&gt;gptq_gemm&lt;&#x2F;code&gt;, update the zero point handling logic to be conditioned on &lt;code&gt;use_v2_format&lt;&#x2F;code&gt;. For example:&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;pre data-lang=&quot;c&quot; class=&quot;language-c z-code&quot;&gt;&lt;code class=&quot;language-c&quot; data-lang=&quot;c&quot;&gt;&lt;span class=&quot;z-source z-c&quot;&gt;&lt;span class=&quot;z-comment z-line z-double-slash z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-comment z-c&quot;&gt;&#x2F;&#x2F;&lt;&#x2F;span&gt; In `reconstruct_exllama_2bit_kernel`:
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-c&quot;&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-c&quot;&gt;&lt;span class=&quot;z-comment z-line z-double-slash z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-comment z-c&quot;&gt;&#x2F;&#x2F;&lt;&#x2F;span&gt; Previous: zeros[i] + 1 (hardcoded for GPTQv1)
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-c&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-c&quot;&gt;&lt;span class=&quot;z-variable z-function z-c&quot;&gt;dequant_2bit_16&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-group z-begin z-c&quot;&gt;(&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-c&quot;&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;load_int4&lt;span class=&quot;z-punctuation z-accessor z-c&quot;&gt;.&lt;&#x2F;span&gt;&lt;span class=&quot;z-variable z-other z-member z-c&quot;&gt;x&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; dq&lt;span class=&quot;z-meta z-brackets z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-begin z-c&quot;&gt;[&lt;&#x2F;span&gt;&lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-c&quot;&gt;0&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-end z-c&quot;&gt;]&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; size_n&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; zeros&lt;span class=&quot;z-meta z-brackets z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-begin z-c&quot;&gt;[&lt;&#x2F;span&gt;&lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-c&quot;&gt;0&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-end z-c&quot;&gt;]&lt;&#x2F;span&gt;&lt;&#x2F;span&gt; &lt;span class=&quot;z-keyword z-operator z-arithmetic z-c&quot;&gt;+&lt;&#x2F;span&gt; &lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-c&quot;&gt;1&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-group z-end z-c&quot;&gt;)&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-terminator z-c&quot;&gt;;&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-c&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-c&quot;&gt;&lt;span class=&quot;z-variable z-function z-c&quot;&gt;dequant_2bit_16&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-group z-begin z-c&quot;&gt;(&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-c&quot;&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;load_int4&lt;span class=&quot;z-punctuation z-accessor z-c&quot;&gt;.&lt;&#x2F;span&gt;&lt;span class=&quot;z-variable z-other z-member z-c&quot;&gt;y&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; dq&lt;span class=&quot;z-meta z-brackets z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-begin z-c&quot;&gt;[&lt;&#x2F;span&gt;&lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-c&quot;&gt;1&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-end z-c&quot;&gt;]&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; size_n&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; zeros&lt;span class=&quot;z-meta z-brackets z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-begin z-c&quot;&gt;[&lt;&#x2F;span&gt;&lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-c&quot;&gt;1&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-end z-c&quot;&gt;]&lt;&#x2F;span&gt;&lt;&#x2F;span&gt; &lt;span class=&quot;z-keyword z-operator z-arithmetic z-c&quot;&gt;+&lt;&#x2F;span&gt; &lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-c&quot;&gt;1&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-group z-end z-c&quot;&gt;)&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-terminator z-c&quot;&gt;;&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-c&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-c&quot;&gt;&lt;span class=&quot;z-variable z-function z-c&quot;&gt;dequant_2bit_16&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-group z-begin z-c&quot;&gt;(&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-c&quot;&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;load_int4&lt;span class=&quot;z-punctuation z-accessor z-c&quot;&gt;.&lt;&#x2F;span&gt;&lt;span class=&quot;z-variable z-other z-member z-c&quot;&gt;z&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; dq&lt;span class=&quot;z-meta z-brackets z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-begin z-c&quot;&gt;[&lt;&#x2F;span&gt;&lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-c&quot;&gt;2&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-end z-c&quot;&gt;]&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; size_n&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; zeros&lt;span class=&quot;z-meta z-brackets z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-begin z-c&quot;&gt;[&lt;&#x2F;span&gt;&lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-c&quot;&gt;2&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-end z-c&quot;&gt;]&lt;&#x2F;span&gt;&lt;&#x2F;span&gt; &lt;span class=&quot;z-keyword z-operator z-arithmetic z-c&quot;&gt;+&lt;&#x2F;span&gt; &lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-c&quot;&gt;1&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-group z-end z-c&quot;&gt;)&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-terminator z-c&quot;&gt;;&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-c&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-c&quot;&gt;&lt;span class=&quot;z-variable z-function z-c&quot;&gt;dequant_2bit_16&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-group z-begin z-c&quot;&gt;(&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-c&quot;&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;load_int4&lt;span class=&quot;z-punctuation z-accessor z-c&quot;&gt;.&lt;&#x2F;span&gt;&lt;span class=&quot;z-variable z-other z-member z-c&quot;&gt;w&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; dq&lt;span class=&quot;z-meta z-brackets z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-begin z-c&quot;&gt;[&lt;&#x2F;span&gt;&lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-c&quot;&gt;3&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-end z-c&quot;&gt;]&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; size_n&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; zeros&lt;span class=&quot;z-meta z-brackets z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-begin z-c&quot;&gt;[&lt;&#x2F;span&gt;&lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-c&quot;&gt;3&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-end z-c&quot;&gt;]&lt;&#x2F;span&gt;&lt;&#x2F;span&gt; &lt;span class=&quot;z-keyword z-operator z-arithmetic z-c&quot;&gt;+&lt;&#x2F;span&gt; &lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-c&quot;&gt;1&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-group z-end z-c&quot;&gt;)&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-terminator z-c&quot;&gt;;&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-c&quot;&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-c&quot;&gt;&lt;span class=&quot;z-comment z-line z-double-slash z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-comment z-c&quot;&gt;&#x2F;&#x2F;&lt;&#x2F;span&gt; Now: zeros[i] + offset (conditioned on `use_v2_format`)
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-c&quot;&gt;&lt;span class=&quot;z-storage z-type z-c&quot;&gt;int&lt;&#x2F;span&gt; zero_offset &lt;span class=&quot;z-keyword z-operator z-assignment z-c&quot;&gt;=&lt;&#x2F;span&gt; use_v2_format &lt;span class=&quot;z-keyword z-operator z-ternary z-c&quot;&gt;?&lt;&#x2F;span&gt; &lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-c&quot;&gt;0&lt;&#x2F;span&gt; &lt;span class=&quot;z-keyword z-operator z-ternary z-c&quot;&gt;:&lt;&#x2F;span&gt; &lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-c&quot;&gt;1&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-terminator z-c&quot;&gt;;&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-c&quot;&gt;&lt;span class=&quot;z-keyword z-operator z-variadic z-c&quot;&gt;...&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-c&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-c&quot;&gt;&lt;span class=&quot;z-variable z-function z-c&quot;&gt;dequant_2bit_16&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-group z-begin z-c&quot;&gt;(&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-c&quot;&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;load_int4&lt;span class=&quot;z-punctuation z-accessor z-c&quot;&gt;.&lt;&#x2F;span&gt;&lt;span class=&quot;z-variable z-other z-member z-c&quot;&gt;x&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; dq&lt;span class=&quot;z-meta z-brackets z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-begin z-c&quot;&gt;[&lt;&#x2F;span&gt;&lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-c&quot;&gt;0&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-end z-c&quot;&gt;]&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; size_n&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; zeros&lt;span class=&quot;z-meta z-brackets z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-begin z-c&quot;&gt;[&lt;&#x2F;span&gt;&lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-c&quot;&gt;0&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-end z-c&quot;&gt;]&lt;&#x2F;span&gt;&lt;&#x2F;span&gt; &lt;span class=&quot;z-keyword z-operator z-arithmetic z-c&quot;&gt;+&lt;&#x2F;span&gt; zero_offset&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-group z-end z-c&quot;&gt;)&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-terminator z-c&quot;&gt;;&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-c&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-c&quot;&gt;&lt;span class=&quot;z-variable z-function z-c&quot;&gt;dequant_2bit_16&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-group z-begin z-c&quot;&gt;(&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-c&quot;&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;load_int4&lt;span class=&quot;z-punctuation z-accessor z-c&quot;&gt;.&lt;&#x2F;span&gt;&lt;span class=&quot;z-variable z-other z-member z-c&quot;&gt;y&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; dq&lt;span class=&quot;z-meta z-brackets z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-begin z-c&quot;&gt;[&lt;&#x2F;span&gt;&lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-c&quot;&gt;1&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-end z-c&quot;&gt;]&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; size_n&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; zeros&lt;span class=&quot;z-meta z-brackets z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-begin z-c&quot;&gt;[&lt;&#x2F;span&gt;&lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-c&quot;&gt;1&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-end z-c&quot;&gt;]&lt;&#x2F;span&gt;&lt;&#x2F;span&gt; &lt;span class=&quot;z-keyword z-operator z-arithmetic z-c&quot;&gt;+&lt;&#x2F;span&gt; zero_offset&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-group z-end z-c&quot;&gt;)&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-terminator z-c&quot;&gt;;&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-c&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-c&quot;&gt;&lt;span class=&quot;z-variable z-function z-c&quot;&gt;dequant_2bit_16&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-group z-begin z-c&quot;&gt;(&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-c&quot;&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;load_int4&lt;span class=&quot;z-punctuation z-accessor z-c&quot;&gt;.&lt;&#x2F;span&gt;&lt;span class=&quot;z-variable z-other z-member z-c&quot;&gt;z&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; dq&lt;span class=&quot;z-meta z-brackets z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-begin z-c&quot;&gt;[&lt;&#x2F;span&gt;&lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-c&quot;&gt;2&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-end z-c&quot;&gt;]&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; size_n&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; zeros&lt;span class=&quot;z-meta z-brackets z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-begin z-c&quot;&gt;[&lt;&#x2F;span&gt;&lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-c&quot;&gt;2&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-end z-c&quot;&gt;]&lt;&#x2F;span&gt;&lt;&#x2F;span&gt; &lt;span class=&quot;z-keyword z-operator z-arithmetic z-c&quot;&gt;+&lt;&#x2F;span&gt; zero_offset&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-group z-end z-c&quot;&gt;)&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-terminator z-c&quot;&gt;;&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-c&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-c&quot;&gt;&lt;span class=&quot;z-variable z-function z-c&quot;&gt;dequant_2bit_16&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-group z-begin z-c&quot;&gt;(&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-c&quot;&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;load_int4&lt;span class=&quot;z-punctuation z-accessor z-c&quot;&gt;.&lt;&#x2F;span&gt;&lt;span class=&quot;z-variable z-other z-member z-c&quot;&gt;w&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; dq&lt;span class=&quot;z-meta z-brackets z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-begin z-c&quot;&gt;[&lt;&#x2F;span&gt;&lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-c&quot;&gt;3&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-end z-c&quot;&gt;]&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; size_n&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; zeros&lt;span class=&quot;z-meta z-brackets z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-begin z-c&quot;&gt;[&lt;&#x2F;span&gt;&lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-c&quot;&gt;3&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-end z-c&quot;&gt;]&lt;&#x2F;span&gt;&lt;&#x2F;span&gt; &lt;span class=&quot;z-keyword z-operator z-arithmetic z-c&quot;&gt;+&lt;&#x2F;span&gt; zero_offset&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-group z-end z-c&quot;&gt;)&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-terminator z-c&quot;&gt;;&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-c&quot;&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
+&lt;blockquote&gt;
+&lt;p&gt;When testing, I found that the original &lt;code&gt;gptq_gemm&lt;&#x2F;code&gt; is buggy at 4-bit even with symmetrically quantized model of GPTQv1 format — out of scope of this PR.&lt;&#x2F;p&gt;
+&lt;&#x2F;blockquote&gt;
+&lt;p&gt;To ensure Pt. 3, review &lt;a href=&quot;https:&#x2F;&#x2F;xxxxyu.github.io&#x2F;blog&#x2F;posts&#x2F;vllm-gptqv2-support&#x2F;#vllm-s-support-for-gptq-v2-format&quot;&gt;vLLM’s Support for GPTQ(v2) Format&lt;&#x2F;a&gt; — both &lt;code&gt;GPTQMarlinLinearMethod&lt;&#x2F;code&gt; and &lt;code&gt;GPTQBitBLASLinearMethod&lt;&#x2F;code&gt; are not affected, as they already support GPTQv2 format, though limited to 4&#x2F;8-bit symmetric quantization.&lt;&#x2F;p&gt;
+&lt;blockquote&gt;
+&lt;p&gt;TODO: Add some performance benchmarks.
+Currently I’ve found that 2-bit gptq_gemm is slower during decoding (GeMV) than prefilling (GeMM).&lt;&#x2F;p&gt;
+&lt;&#x2F;blockquote&gt;
+&lt;h2 id=&quot;conclusion&quot;&gt;Conclusion&lt;&#x2F;h2&gt;
+&lt;p&gt;This post details the development of GPTQv2 format support in vLLM, which addresses a significant gap in low-bit asymmetric quantization inference with SOTA LLM inference frameworks.&lt;&#x2F;p&gt;
+&lt;p&gt;Questions and discussions are welcomed.&lt;&#x2F;p&gt;
+&lt;p&gt;&lt;strong&gt;Possible future works:&lt;&#x2F;strong&gt;&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;Extend optimized kernels (Marlin, BitBLAS) to support 2&#x2F;3-bit or asymmetric quantization.&lt;&#x2F;li&gt;
+&lt;li&gt;Fix the 4-bit bug in &lt;code&gt;gptq_gemm&lt;&#x2F;code&gt;.&lt;&#x2F;li&gt;
+&lt;li&gt;Improve the decoding speed with &lt;code&gt;gptq_gemm&lt;&#x2F;code&gt;.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;hr&gt;&lt;ol class=&quot;footnotes-list&quot;&gt;
+&lt;li id=&quot;fn-1&quot;&gt;
+&lt;p&gt;Frantar, Elias, et al. “GPTQ: Accurate Post-Training Quantization for Generative Pre-Trained Transformers.” arXiv preprint arXiv:2210.17323 (2022). &lt;a href=&quot;#fr-1-1&quot;&gt;↩&lt;&#x2F;a&gt;&lt;&#x2F;p&gt;
+&lt;&#x2F;li&gt;
+&lt;li id=&quot;fn-2&quot;&gt;
+&lt;p&gt;Li, Yuhang, et al. “GPTAQ: Efficient Finetuning-Free Quantization for Asymmetric Calibration.” arXiv preprint arXiv:2504.02692 (2025). &lt;a href=&quot;#fr-2-1&quot;&gt;↩&lt;&#x2F;a&gt;&lt;&#x2F;p&gt;
+&lt;&#x2F;li&gt;
+&lt;li id=&quot;fn-3&quot;&gt;
+&lt;p&gt;de Kok, Daniël. “GPTQ Checkpoint Format.” Daniël’s Website, 7 Aug. 2024, danieldk.eu&#x2F;GPTQ-Checkpoint-Format. &lt;a href=&quot;#fr-3-1&quot;&gt;↩&lt;&#x2F;a&gt;&lt;&#x2F;p&gt;
+&lt;&#x2F;li&gt;
+&lt;&#x2F;ol&gt;
+</content>
+        <summary type="html">Deep technical analysis of GPTQv2 format limitations in vLLM, and implementation of CUDA kernel adaptations to enable efficient low-bit&#x2F;asymmetric quantization inference.</summary>
+        </entry>
+</feed>
