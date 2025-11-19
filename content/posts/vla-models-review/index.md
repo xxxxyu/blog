@@ -14,7 +14,7 @@ katex = true
 +++
 
 > I am new to this field — feel free to discuss, and welcome to bring up any questions!
-> This is adapted from my slides, available at: [[PDF]](/resources/vla_review_0911.pdf).
+> This is adapted from my slides, available at: [[PDF]](resources/vla_review_0911.pdf).
 
 ## Background and Concepts
 
