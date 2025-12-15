@@ -1,0 +1,650 @@
+<?xml version="1.0" encoding="utf-8"?>
+<?xml-stylesheet href="https://xxxxyu.github.io/blog/feed_style.xsl" type="text/xsl"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xml:lang="en">
+    <tabi:metadata xmlns:tabi="https://github.com/welpo/tabi">
+        <tabi:base_url>https:&#x2F;&#x2F;xxxxyu.github.io&#x2F;blog&#x2F;</tabi:base_url>
+        <tabi:separator>
+            •
+        </tabi:separator>
+        <tabi:about_feeds>This is a web feed, also known as an Atom feed. Subscribe by copying the URL from the address bar into your newsreader. Visit About Feeds to learn more and get started. It&#x27;s free.</tabi:about_feeds>
+        <tabi:visit_the_site>Visit website</tabi:visit_the_site>
+        <tabi:recent_posts>Recent posts</tabi:recent_posts>
+        <tabi:last_updated_on>Updated on $DATE</tabi:last_updated_on>
+        <tabi:default_theme></tabi:default_theme>
+        <tabi:post_listing_date>date</tabi:post_listing_date>
+        <tabi:current_section>Development</tabi:current_section>
+    </tabi:metadata><title>Xyu's Blog - Development</title>
+        <subtitle>Blog space for Xyu</subtitle>
+    <link href="https://xxxxyu.github.io/blog/tags/development/atom.xml" rel="self" type="application/atom+xml"/>
+    <link href="https://xxxxyu.github.io/blog/tags/development/" rel="alternate" type="text/html"/>
+    <generator uri="https://www.getzola.org/">Zola</generator><updated>2025-10-28T00:00:00+00:00</updated><id>https://xxxxyu.github.io/blog/tags/development/atom.xml</id><entry xml:lang="en">
+        <title>Enhancing GPTQv2 Format Support in vLLM: Analysis and Implementation</title>
+        <published>2025-10-12T00:00:00+00:00</published>
+        <updated>2025-10-28T00:00:00+00:00</updated>
+        <author>
+            <name>Xiangyu Li</name>
+        </author>
+        <link rel="alternate" href="https://xxxxyu.github.io/blog/posts/vllm-gptqv2-support/" type="text/html"/>
+        <id>https://xxxxyu.github.io/blog/posts/vllm-gptqv2-support/</id>
+        
+            <content type="html">&lt;blockquote&gt;
+&lt;p&gt;Issue (closed): &lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;vllm-project&#x2F;vllm&#x2F;issues&#x2F;26343&quot;&gt;#26343&lt;&#x2F;a&gt; &lt;br &#x2F;&gt;
+Pull request (merged): &lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;vllm-project&#x2F;vllm&#x2F;pull&#x2F;26092&quot;&gt;#26092&lt;&#x2F;a&gt; &lt;br &#x2F;&gt;
+Commit: &lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;vllm-project&#x2F;vllm&#x2F;commit&#x2F;5cc6bddb6ef5e8e5c10de8122a43fd6e8c1e3b4b&quot;&gt;&lt;code&gt;5cc6bdd&lt;&#x2F;code&gt;&lt;&#x2F;a&gt;&lt;&#x2F;p&gt;
+&lt;&#x2F;blockquote&gt;
+&lt;h2 id=&quot;introduction&quot;&gt;Introduction&lt;&#x2F;h2&gt;
+&lt;p&gt;vLLM, one of the leading LLM inference frameworks, currently lacks robust support for &lt;strong&gt;GPTQv2 format&lt;&#x2F;strong&gt; (an upgraded version of GPTQv1 format) models, particularly those using &lt;strong&gt;low-bit (2&#x2F;3-bit) or asymmetric quantization&lt;&#x2F;strong&gt;. While vLLM doesn’t raise explicit errors when loading such models, it incorrectly treats them as GPTQv1 format, resulting in degraded inference quality and characteristic gibberish outputs (consisting of repeated &lt;code&gt;!!!&lt;&#x2F;code&gt;, details in &lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;vllm-project&#x2F;vllm&#x2F;issues&#x2F;26343&quot;&gt;this issue&lt;&#x2F;a&gt;).&lt;&#x2F;p&gt;
+&lt;p&gt;This limitation stems from differences in &lt;strong&gt;zero point handling&lt;&#x2F;strong&gt; between GPTQv1 and GPTQv2 checkpoint formats, which vLLM’s existing GPTQ GeMM kernels don’t account for. This post presents a comprehensive analysis of this limitation, and documents the implementation of kernel adaptations (i.e., in &lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;vllm-project&#x2F;vllm&#x2F;pull&#x2F;26092&quot;&gt;this PR&lt;&#x2F;a&gt;), that enable proper GPTQv2 support while maintaining backward compatibility.&lt;&#x2F;p&gt;
+&lt;p&gt;Through careful investigation of vLLM’s quantization support and targeted CUDA kernel modifications, I enable robust inference for GPTQv2 format models, especially low-bit or asymmetric ones, with vLLM — contributing a step forward towards efficient LLM deployment.&lt;&#x2F;p&gt;
+&lt;h2 id=&quot;background-and-preliminaries&quot;&gt;Background and Preliminaries&lt;&#x2F;h2&gt;
+&lt;p&gt;In my case, I use vLLM to serve some low-bit (e.g., 2-bit), asymmetrically quantized models, stored in GPTQv2 format, and encountered &lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;vllm-project&#x2F;vllm&#x2F;issues&#x2F;26343&quot;&gt;this issue&lt;&#x2F;a&gt;.&lt;&#x2F;p&gt;
+&lt;p&gt;Before diving into technical details, I’ll briefly introduce the background to do so (e.g., why GPTQv2), and some preliminaries (e.g., the checkpoint format) to help follow the technical parts. &lt;strong&gt;Key takeaways:&lt;&#x2F;strong&gt;&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Asymmetric quantization benefits low-bit quantization&lt;&#x2F;strong&gt;, by adjusting the zero point for each group of weights.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;GPTQv2 format outperforms GPTQv1 in asymmetric quantization&lt;&#x2F;strong&gt;, by better preserving zero point information.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h3 id=&quot;weight-quantization-of-llms&quot;&gt;Weight Quantization of LLMs&lt;&#x2F;h3&gt;
+&lt;p&gt;Weight quantization that quantizes high-precision model weights (e.g., 16&#x2F;32-bit) into fewer bits (e.g., 2&#x2F;3&#x2F;4&#x2F;8-bit) has been a common practice in LLM deployment, especially in resource-constrained scenarios.&lt;&#x2F;p&gt;
+&lt;p&gt;Technically, weight quantization maps the large range of high-precision weights (e.g., within $[-65504, 65504]$ for FP16) into a limited range of quantized weights (e.g., $[0, 2^b - 1]$ for $b$-bit unsigned integer).
+This mapping typically involves a scaling factor ($scale$) that compresses the range, and a bias ($zero$) that shifts the zero point. We denote $w_o$ as the original weight within the range $[w_{min}, w_{max}]$ (usually for a group of weights), and $w_q$ as the quantized weight. Then, a simple $b$-bit integer quantization is formulated as:&lt;&#x2F;p&gt;
+&lt;p&gt;\[
+scale = \frac{w_{max} - w_{min}}{2^b - 1}
+\]&lt;&#x2F;p&gt;
+&lt;p&gt;\[
+zero = - \mathrm{round}(\frac{w_{min}}{scale})
+\]&lt;&#x2F;p&gt;
+&lt;p&gt;\[
+w_q = \mathrm{clamp}(\mathrm{round}(\frac{w_o}{scale}) + zero)
+\]&lt;&#x2F;p&gt;
+&lt;p&gt;To recover the original weight $\hat{w}_o$ during dequantization:&lt;&#x2F;p&gt;
+&lt;p&gt;\[
+\hat{w}_o = (w_q - zero) \cdot scale
+\]&lt;&#x2F;p&gt;
+&lt;p&gt;Based on this formulation, quantization methods are categorized by whether the zero point is required:&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;em&gt;Symmetric quantization&lt;&#x2F;em&gt; assumes $w_{max} = - w_{min}$, so $zero = - \mathrm{round}(\frac{2^b - 1}{2})$ will not change. In this case, $zero$ doesn’t provide additional information given the quantization bits.&lt;&#x2F;p&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;em&gt;Asymmetric quantization&lt;&#x2F;em&gt; doesn’t have such assumption. So $zero$ varies across groups of weights, and is necessary for accurately recovering the original weights.&lt;&#x2F;p&gt;
+&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;p&gt;Note that most GPTQ implementations are 4-bit symmetric quantization. However, to reduce the quantization error in lower bits, asymmetric quantization is necessary.&lt;&#x2F;p&gt;
+&lt;h3 id=&quot;gptq-quantization-and-checkpoint-format&quot;&gt;GPTQ: Quantization and Checkpoint Format&lt;&#x2F;h3&gt;
+&lt;p&gt;GPTQ&lt;sup class=&quot;footnote-reference&quot; id=&quot;fr-1-1&quot;&gt;&lt;a href=&quot;#fn-1&quot;&gt;[1]&lt;&#x2F;a&gt;&lt;&#x2F;sup&gt; is one of the most popular post-training &lt;strong&gt;quantization methods&lt;&#x2F;strong&gt; for generative transformers (mainly LLMs and VLMs).
+It utilizes approximate second-order information (inverse layer Hessian) to reduce quantization errors.
+Besides, GPTQ could also refer to the specific &lt;strong&gt;checkpoint format&lt;&#x2F;strong&gt; adopted by GPTQ-quantized models (e.g., by &lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;AutoGPTQ&#x2F;AutoGPTQ&quot;&gt;AutoGPTQ&lt;&#x2F;a&gt;), with details explained in &lt;a href=&quot;https:&#x2F;&#x2F;danieldk.eu&#x2F;GPTQ-Checkpoint-Format&quot;&gt;this blog&lt;&#x2F;a&gt;.&lt;&#x2F;p&gt;
+&lt;p&gt;GPTQ is widely supported by the community, including 1) quantization libraries that implement the GPTQ quantization method or support exporting to GPTQ format (although not implementing the quantization method), and 2) kernel libraries and inference frameworks that support inference with models of the GPTQ checkpoint format, as listed below:&lt;&#x2F;p&gt;
+&lt;p&gt;Quantization libraries:&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;ModelCloud&#x2F;GPTQModel&quot;&gt;GPTQModel&lt;&#x2F;a&gt; is now the 1st choice for GPTQ quantization in replacement of AutoGPTQ, with richer model and backend support.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;AutoGPTQ&#x2F;AutoGPTQ&quot;&gt;AutoGPTQ&lt;&#x2F;a&gt; was the most popular library for GPTQ quantization, and is unmaintained now.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;IST-DASLab&#x2F;gptq&quot;&gt;gptq&lt;&#x2F;a&gt; is the official code implementation of the GPTQ paper.&lt;&#x2F;li&gt;
+&lt;li&gt;Many other libraries implement GPTQ quantization, or support to save quantized models in GPTQ format.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;p&gt;Computing (CUDA) kernels:&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;IST-DASLab&#x2F;marlin&quot;&gt;Marlin&lt;&#x2F;a&gt; is the SOTA W4A16 mpGeMM kernel supporting 4-bit GPTQ models.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;turboderp-org&#x2F;exllamav2&quot;&gt;ExLlamaV2&lt;&#x2F;a&gt; is an inference library with high-performance kernels for GPTQ models.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;microsoft&#x2F;BitBLAS&quot;&gt;BitBLAS&lt;&#x2F;a&gt; is a high-performance low-bit mpGeMM kernel library supporting GPTQ models.&lt;&#x2F;li&gt;
+&lt;li&gt;Similarly, many other kernel libraries support GPTQ format models.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;p&gt;SOTA LLM inference frameworks, including &lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;vllm-project&#x2F;vllm&quot;&gt;vLLM&lt;&#x2F;a&gt;, are integrated with the above quantization and kernel libraries, to support efficient LLM deployment with GPTQ quantization.&lt;&#x2F;p&gt;
+&lt;h3 id=&quot;from-gptqv1-to-gptqv2&quot;&gt;From GPTQv1 to GPTQv2&lt;&#x2F;h3&gt;
+&lt;p&gt;GPTQv2 is an upgraded version of GPTQ (by a different team though), in both the quantization method and checkpoint format. Specifically:&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;Quantization method: GPTQv2 (also called GPTAQ) introduces asymmetric calibration, which effectively reduces the quantization error accumulated in previous layers&lt;sup class=&quot;footnote-reference&quot; id=&quot;fr-2-1&quot;&gt;&lt;a href=&quot;#fn-2&quot;&gt;[2]&lt;&#x2F;a&gt;&lt;&#x2F;sup&gt;. It’s first implemented in &lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;Intelligent-Computing-Lab-Panda&#x2F;GPTAQ&quot;&gt;GPTAQ&lt;&#x2F;a&gt;, and then integrated to &lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;ModelCloud&#x2F;GPTQModel&quot;&gt;GPTQModel&lt;&#x2F;a&gt; (enabled by setting &lt;code&gt;v2=True&lt;&#x2F;code&gt;).&lt;&#x2F;li&gt;
+&lt;li&gt;Checkpoint format: GPTQv2 format stores the zero points differently with GPTQv1 (i.e., GPTQ) format — GPTQv1 stores $\mathrm{clamp}(zero - 1)$ in the checkpoint, and requires adding $1$ back before dequantization at runtime&lt;sup class=&quot;footnote-reference&quot; id=&quot;fr-3-1&quot;&gt;&lt;a href=&quot;#fn-3&quot;&gt;[3]&lt;&#x2F;a&gt;&lt;&#x2F;sup&gt;. GPTQv2 stores the exact $zero$ value, and doesn’t require extra runtime adjustment. It is also supported by &lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;ModelCloud&#x2F;GPTQModel&quot;&gt;GPTQModel&lt;&#x2F;a&gt; (enabled by setting &lt;code&gt;format=&quot;gptq_v2&quot;&lt;&#x2F;code&gt;).&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;p&gt;Just like GPTQv1, the quantization method and checkpoint format are not coupled. So you can:&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;Store a non-GPTQ-quantized model in GPTQv2 format, like &lt;a href=&quot;https:&#x2F;&#x2F;huggingface.co&#x2F;BitDistiller&#x2F;Qwen-8B-w2g64-gptq&quot;&gt;BitDistiller&#x2F;Qwen-8B-w2g64-gptq&lt;&#x2F;a&gt;.&lt;&#x2F;li&gt;
+&lt;li&gt;Store a GPTQv1-quantized model in GPTQv2 format, by setting &lt;code&gt;format=&quot;gptq_v2&quot;&lt;&#x2F;code&gt; only, in GPTQModel.&lt;&#x2F;li&gt;
+&lt;li&gt;Store a GPTQv2-quantized model in GPTQv1 format, by setting &lt;code&gt;v2=True&lt;&#x2F;code&gt; only, in GPTQModel.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;p&gt;Note that the conversion between GPTQv2 and GPTQv1 format is &lt;strong&gt;irreversible&lt;&#x2F;strong&gt; — you can convert GPTQv1 to GPTQv2 losslessly, but not from GPTQv2 to GPTQv1. This is due to the “-1” issue of GPTQv1 as mentioned above. In this way, the actual zero point range in suppressed by clamping $0 - 1$ to $0$ in GPTQv1. For example, in INT2 quantization, the effective range shrinks from $[0,3]$ to $[1,3]$.
+Therefore, &lt;strong&gt;GPTQv2 format is a preferable choice in asymmetric quantization, especially for low-bit quantization.&lt;&#x2F;strong&gt;&lt;&#x2F;p&gt;
+&lt;h2 id=&quot;cause-analysis&quot;&gt;Cause Analysis&lt;&#x2F;h2&gt;
+&lt;p&gt;After all the preparation, we can finally dive into the technical details about why and how vLLM fails for GPTQv2 in my case — even though it has some sort of support actually, which I found after careful investigation. &lt;strong&gt;Key takeaways:&lt;&#x2F;strong&gt;&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;vLLM has several GPTQ-compatible GeMM kernels with pre-defined priorities&lt;&#x2F;strong&gt; — Marlin, BitBLAS, and fallbacks.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Performant kernels like Marlin support GPTQv2 format of limited bits and symmetry&lt;&#x2F;strong&gt; — only 4&#x2F;8-bit symmetric quantization.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Fallback kernels support more bits and symmetry but lacks GPTQv2 format support&lt;&#x2F;strong&gt; — the reason why I encountered the issue.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;!-- markdownlint-disable MD046 --&gt;
+
+
+&lt;noscript&gt;
+    &lt;strong&gt;⚠️ JavaScript is required to render the diagram.&lt;&#x2F;strong&gt;
+&lt;&#x2F;noscript&gt;
+&lt;pre class=&quot;mermaid&quot;&gt;
+    graph TD
+    A[VllmConfig] --&gt; B[ModelConfig._verify_quantization]
+
+    B --&gt; |&quot;Priority: gptq_marlin &gt; gptq_bitblas &gt; gptq&quot;| E[QuantizationConfig.get_quant_method]
+    
+    E --&gt;|4&#x2F;8-bit + sym| J[GPTQMarlinLinearMethod]
+    E --&gt;|4&#x2F;8-bit + sym| K[GPTQBitBLASLinearMethod]
+    E --&gt;|2&#x2F;3&#x2F;4&#x2F;8-bit + sym&#x2F;asym| L[GPTQLinearMethod]
+    
+    J --&gt; JJ[MarlinLinearKernel]
+    K --&gt; KK[BitBLASLinearKernel]
+    L --&gt; LL[Direct Kernel Call]
+    
+    JJ --&gt; M[gptq_marlin_gemm&lt;br&#x2F;&gt;CUDA kernel]
+    KK --&gt; N[bitblas.Matmul&lt;br&#x2F;&gt;External library]
+    LL --&gt; O[gptq_gemm&lt;br&#x2F;&gt;CUDA kernel]
+    
+    M --&gt; Q[&quot;✅ Marlin: gptq&#x2F;gptq_v2&quot;]
+    N --&gt; R[&quot;✅ BitBLAS: gptq&#x2F;gptq_v2&quot;] 
+    O --&gt; S[&quot;❌ GPTQ: gptq only&quot;]
+    
+    style J fill:#90EE90
+    style K fill:#90EE90
+    style L fill:#FFB6C1
+    style Q fill:#90EE90
+    style R fill:#90EE90
+    style S fill:#FFB6C1
+&lt;&#x2F;pre&gt;
+&lt;!-- markdownlint-enable MD046 --&gt;
+&lt;h3 id=&quot;vllm-s-kernel-routing-hierarchy&quot;&gt;vLLM’s Kernel Routing Hierarchy&lt;&#x2F;h3&gt;
+&lt;p&gt;The first step is to understand how vLLM routes computing kernels for different quantizations, like GPTQ. This is implemented in the model execution part of the &lt;a href=&quot;https:&#x2F;&#x2F;docs.vllm.ai&#x2F;en&#x2F;stable&#x2F;design&#x2F;arch_overview.html#llm-engine&quot;&gt;LLMEngine&lt;&#x2F;a&gt;. For simplicity, we only consider dense models (no MoE). It includes the following calling hierarchy:&lt;&#x2F;p&gt;
+&lt;p&gt;&lt;strong&gt;1. Model-level quantization configuration:&lt;&#x2F;strong&gt;&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;In model implementations (&lt;code&gt;vllm&#x2F;model_executor&#x2F;models&lt;&#x2F;code&gt;), &lt;code&gt;vllm_config: VllmConfig&lt;&#x2F;code&gt; is passed to the model at initialization, which contains &lt;code&gt;quant_config: QuantizationConfig&lt;&#x2F;code&gt;.
+&lt;ul&gt;
+&lt;li&gt;Each quantization extends &lt;code&gt;QuantizationConfig&lt;&#x2F;code&gt; with quantization-specific overrides (e.g., &lt;code&gt;GPTQConfig&lt;&#x2F;code&gt;). See &lt;a href=&quot;https:&#x2F;&#x2F;docs.vllm.ai&#x2F;en&#x2F;stable&#x2F;api&#x2F;vllm&#x2F;model_executor&#x2F;layers&#x2F;quantization&#x2F;index.html&quot;&gt;all quantizations&lt;&#x2F;a&gt;.&lt;&#x2F;li&gt;
+&lt;li&gt;If no quantization is specified in &lt;code&gt;quant_config&lt;&#x2F;code&gt;, &lt;code&gt;ModelConfig._verify_quantization&lt;&#x2F;code&gt; will select one from a priority list (see &lt;a href=&quot;https:&#x2F;&#x2F;xxxxyu.github.io&#x2F;blog&#x2F;posts&#x2F;vllm-gptqv2-support&#x2F;#vllm-gptq-support-notes&quot;&gt;below&lt;&#x2F;a&gt;).&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;Each linear module of this model is initialized with &lt;code&gt;quant_config&lt;&#x2F;code&gt;.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;p&gt;&lt;strong&gt;2. Layer-level quantization configuration (linear methods):&lt;&#x2F;strong&gt;&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;At initialization, each quantized linear module determines &lt;code&gt;quant_method = quant_config.get_quant_method&lt;&#x2F;code&gt;.
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;get_quant_method&lt;&#x2F;code&gt; returns a specific linear method class (inherited from &lt;code&gt;LinearMethodBase&lt;&#x2F;code&gt;, e.g., &lt;code&gt;GPTQLinearMethod&lt;&#x2F;code&gt;) depending on the quantization configuration.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;Each linear module calls the computing kernel by overriding &lt;code&gt;LinearMethodBase.apply&lt;&#x2F;code&gt; (e.g., &lt;code&gt;GPTQLinearMethod.apply&lt;&#x2F;code&gt; calls &lt;code&gt;gptq_gemm&lt;&#x2F;code&gt;).&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;p&gt;&lt;strong&gt;3. (Optional) Kernel selection (linear kernels):&lt;&#x2F;strong&gt;&lt;&#x2F;p&gt;
+&lt;p&gt;vLLM supports several ways of routing to low-level CUDA kernels from a linear method class:&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;Direct calling. For example, &lt;code&gt;GPTQLinearMethod&lt;&#x2F;code&gt; directly routes to &lt;code&gt;gptq_gemm&lt;&#x2F;code&gt;, a registered custom operand of vLLM (implemented in &lt;code&gt;csrc&#x2F;quantization&#x2F;gptq&lt;&#x2F;code&gt;).&lt;&#x2F;li&gt;
+&lt;li&gt;Indirect calling. When multiple kernels are available for a linear method, or a kernel is available for multiple linear methods, vLLM supports extending the &lt;code&gt;MPLinearKernel&lt;&#x2F;code&gt; class as an interface for routing to this kernel (in &lt;code&gt;vllm&#x2F;model_executor&#x2F;layers&#x2F;quantization&#x2F;kernels&#x2F;mixed_precision&lt;&#x2F;code&gt;). For example, &lt;code&gt;GPTQBitBLASLinearMethod&lt;&#x2F;code&gt; routes to &lt;code&gt;BitBLASLinearKernel&lt;&#x2F;code&gt;, and &lt;code&gt;GPTQMarlinLinearMethod&lt;&#x2F;code&gt; calls &lt;code&gt;choose_mp_linear_kernel&lt;&#x2F;code&gt; for flexible routing.&lt;&#x2F;li&gt;
+&lt;li&gt;External calling (orthogonal to the above). vLLM supports calling kernels from external libraries. For example, &lt;code&gt;BitBLASLinearKernel&lt;&#x2F;code&gt; calls &lt;code&gt;Matmul&lt;&#x2F;code&gt; from the &lt;code&gt;bitblas&lt;&#x2F;code&gt; Python library.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h3 id=&quot;vllm-s-support-for-gptq-v2-format&quot;&gt;vLLM’s Support for GPTQ(v2) Format&lt;&#x2F;h3&gt;
+&lt;p&gt;vLLM integrates several optimized kernels for GPTQ format models, as listed in &lt;a href=&quot;https:&#x2F;&#x2F;xxxxyu.github.io&#x2F;blog&#x2F;posts&#x2F;vllm-gptqv2-support&#x2F;#gptq-quantization-and-checkpoint-format&quot;&gt;GPTQ: Quantization and Checkpoint Format&lt;&#x2F;a&gt;, including Marlin, ExLlamaV2, BitBLAS, etc. vLLM also has fallback kernels for unsupported quantization configurations of these kernels. Following the analysis in &lt;a href=&quot;https:&#x2F;&#x2F;xxxxyu.github.io&#x2F;blog&#x2F;posts&#x2F;vllm-gptqv2-support&#x2F;#vllm-s-kernel-routing-hierarchy&quot;&gt;vLLM’s Kernel Routing Hierarchy&lt;&#x2F;a&gt;, I summarize this support matrix (by linear methods):&lt;&#x2F;p&gt;
+&lt;table&gt;&lt;thead&gt;&lt;tr&gt;&lt;th&gt;Method&lt;&#x2F;th&gt;&lt;th&gt;Bits&lt;&#x2F;th&gt;&lt;th&gt;Sym&lt;&#x2F;th&gt;&lt;th&gt;GPTQ Format&lt;&#x2F;th&gt;&lt;&#x2F;tr&gt;&lt;&#x2F;thead&gt;&lt;tbody&gt;
+&lt;tr&gt;&lt;td&gt;GPTQMarlin&lt;&#x2F;td&gt;&lt;td&gt;4,8&lt;&#x2F;td&gt;&lt;td&gt;True&lt;&#x2F;td&gt;&lt;td&gt;&lt;code&gt;gptq, gptq_v2&lt;&#x2F;code&gt;&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;GPTQBitBLAS&lt;&#x2F;td&gt;&lt;td&gt;4,8&lt;&#x2F;td&gt;&lt;td&gt;True&lt;&#x2F;td&gt;&lt;td&gt;&lt;code&gt;gptq, gptq_v2&lt;&#x2F;code&gt;&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;GPTQ&lt;&#x2F;td&gt;&lt;td&gt;2,3,4,8&lt;&#x2F;td&gt;&lt;td&gt;Any&lt;&#x2F;td&gt;&lt;td&gt;&lt;code&gt;gptq&lt;&#x2F;code&gt;&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;&#x2F;tbody&gt;&lt;&#x2F;table&gt;
+&lt;p&gt;&lt;a id=&quot;vllm-gptq-support-notes&quot;&gt;&lt;&#x2F;a&gt;&lt;&#x2F;p&gt;
+&lt;p&gt;Notes:&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;All methods support 4&#x2F;8-bit symmetric quantization. vLLM selects the most performant method supported by the current configuration, according to predefined priorities of quantization overrides (in &lt;code&gt;ModelConfig._verify_quantization&lt;&#x2F;code&gt;):&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;pre data-lang=&quot;py&quot; class=&quot;language-py z-code&quot;&gt;&lt;code class=&quot;language-py&quot; data-lang=&quot;py&quot;&gt;&lt;span class=&quot;z-source z-python&quot;&gt;&lt;span class=&quot;z-meta z-qualified-name z-python&quot;&gt;&lt;span class=&quot;z-meta z-generic-name z-python&quot;&gt;overrides&lt;&#x2F;span&gt;&lt;&#x2F;span&gt; &lt;span class=&quot;z-keyword z-operator z-assignment z-python&quot;&gt;=&lt;&#x2F;span&gt; &lt;span class=&quot;z-meta z-sequence z-list z-python&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-sequence z-begin z-python&quot;&gt;[&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-python&quot;&gt;&lt;span class=&quot;z-meta z-sequence z-list z-python&quot;&gt;                &lt;span class=&quot;z-constant z-language z-python&quot;&gt;...&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-python&quot;&gt;&lt;span class=&quot;z-meta z-sequence z-list z-python&quot;&gt;                &lt;span class=&quot;z-comment z-line z-number-sign z-python&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-comment z-python&quot;&gt;#&lt;&#x2F;span&gt; gptq_marlin_24 requires special format,
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-python&quot;&gt;&lt;span class=&quot;z-meta z-sequence z-list z-python&quot;&gt;                &lt;span class=&quot;z-comment z-line z-number-sign z-python&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-comment z-python&quot;&gt;#&lt;&#x2F;span&gt; so we don&amp;#39;t consider here.
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-python&quot;&gt;&lt;span class=&quot;z-meta z-sequence z-list z-python&quot;&gt;                &lt;span class=&quot;z-meta z-string z-python&quot;&gt;&lt;span class=&quot;z-string z-quoted z-double z-python&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-string z-begin z-python&quot;&gt;&amp;quot;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-string z-python&quot;&gt;&lt;span class=&quot;z-string z-quoted z-double z-python&quot;&gt;gptq_marlin_24&lt;span class=&quot;z-punctuation z-definition z-string z-end z-python&quot;&gt;&amp;quot;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-separator z-sequence z-python&quot;&gt;,&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-python&quot;&gt;&lt;span class=&quot;z-meta z-sequence z-list z-python&quot;&gt;                &lt;span class=&quot;z-comment z-line z-number-sign z-python&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-comment z-python&quot;&gt;#&lt;&#x2F;span&gt; Priority: gptq_marlin &amp;gt; gptq_bitblas &amp;gt; gptq.
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-python&quot;&gt;&lt;span class=&quot;z-meta z-sequence z-list z-python&quot;&gt;                &lt;span class=&quot;z-meta z-string z-python&quot;&gt;&lt;span class=&quot;z-string z-quoted z-double z-python&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-string z-begin z-python&quot;&gt;&amp;quot;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-string z-python&quot;&gt;&lt;span class=&quot;z-string z-quoted z-double z-python&quot;&gt;gptq_marlin&lt;span class=&quot;z-punctuation z-definition z-string z-end z-python&quot;&gt;&amp;quot;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-separator z-sequence z-python&quot;&gt;,&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-python&quot;&gt;&lt;span class=&quot;z-meta z-sequence z-list z-python&quot;&gt;                &lt;span class=&quot;z-meta z-string z-python&quot;&gt;&lt;span class=&quot;z-string z-quoted z-double z-python&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-string z-begin z-python&quot;&gt;&amp;quot;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-string z-python&quot;&gt;&lt;span class=&quot;z-string z-quoted z-double z-python&quot;&gt;gptq_bitblas&lt;span class=&quot;z-punctuation z-definition z-string z-end z-python&quot;&gt;&amp;quot;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-separator z-sequence z-python&quot;&gt;,&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-python&quot;&gt;&lt;span class=&quot;z-meta z-sequence z-list z-python&quot;&gt;                &lt;span class=&quot;z-constant z-language z-python&quot;&gt;...&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-python&quot;&gt;&lt;span class=&quot;z-meta z-sequence z-list z-python&quot;&gt;            &lt;span class=&quot;z-punctuation z-section z-sequence z-end z-python&quot;&gt;]&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
+&lt;ul&gt;
+&lt;li&gt;Only &lt;code&gt;GPTQLinearMethod&lt;&#x2F;code&gt; supports 2&#x2F;3-bit quantization and asymmetric quantization. However, it lacks GPTQv2 support (both the other two supports).&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;p&gt;As a result, neither 2&#x2F;3-bit nor asymmetric quantization in GPTQv2 format are unsupported by vLLM, which motivates &lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;vllm-project&#x2F;vllm&#x2F;pull&#x2F;26092&quot;&gt;this PR&lt;&#x2F;a&gt;.&lt;&#x2F;p&gt;
+&lt;h2 id=&quot;solution&quot;&gt;Solution&lt;&#x2F;h2&gt;
+&lt;p&gt;Based on the above analysis, vLLM’s GPTQ linear methods lack support for 2&#x2F;3-bit quantization and asymmetric quantization in GPTQv2 format, and require adaption to robustly support GPTQv2 format models of various configurations.&lt;&#x2F;p&gt;
+&lt;h3 id=&quot;approach-adapt-gptq-linear-method-kernel&quot;&gt;Approach: Adapt GPTQ Linear Method &amp;amp; Kernel&lt;&#x2F;h3&gt;
+&lt;p&gt;To add such support, at least one linear method should be added&#x2F;adapted. To adapt existing linear methods:&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;GPTQMarlinLinearMethod&lt;&#x2F;code&gt; (lacking 2&#x2F;3-bit and asymmetric support): It requires also modifying vLLM’s Marlin CUDA kernel, which is dedicated for 4&#x2F;8-bit symmetric quantization — not a good choice.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;code&gt;GPTQBitBLASLinearMethod&lt;&#x2F;code&gt; (lacking 2&#x2F;3-bit and asymmetric support): It requires modifying only the linear method&#x2F;kernel (Python code), since the &lt;code&gt;bitblas&lt;&#x2F;code&gt; library itself supports the &lt;code&gt;bits&lt;&#x2F;code&gt; and &lt;code&gt;sym&lt;&#x2F;code&gt; we want — a reasonable choice, but requires the optional &lt;code&gt;bitblas&lt;&#x2F;code&gt; package to be installed.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;code&gt;GPTQLinearMethod&lt;&#x2F;code&gt; (lacking GPTQv2 format support): It requires also modifying vLLM’s &lt;code&gt;gptq_gemm&lt;&#x2F;code&gt; CUDA kernel, by only adapting the zero point handling logic — preferred.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;p&gt;So, the plan is to adapt &lt;code&gt;GPTQLinearMethod&lt;&#x2F;code&gt; (with &lt;code&gt;GPTQConfig&lt;&#x2F;code&gt;) and &lt;code&gt;gptq_gemm&lt;&#x2F;code&gt; to add proper GPTQv2 format support.&lt;&#x2F;p&gt;
+&lt;h3 id=&quot;details-of-adaption-conditioned-on-format&quot;&gt;Details of Adaption: Conditioned on Format&lt;&#x2F;h3&gt;
+&lt;p&gt;During this linear method &amp;amp; kernel adaption, there are 3 points to keep in mind:&lt;&#x2F;p&gt;
+&lt;ol&gt;
+&lt;li&gt;Maintain compatibility for GPTQv1 format.&lt;&#x2F;li&gt;
+&lt;li&gt;Keep the code and binary size impact down.&lt;&#x2F;li&gt;
+&lt;li&gt;Make sure other kernels (e.g., Marlin) are not running with GPTQv2 incorrectly.&lt;&#x2F;li&gt;
+&lt;&#x2F;ol&gt;
+&lt;p&gt;In response to Pt. 1 and 2:&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;Add a &lt;code&gt;use_v2_format: bool&lt;&#x2F;code&gt; attribute to &lt;code&gt;GPTQLinearMethod&lt;&#x2F;code&gt; that indicates whether &lt;code&gt;checkpoint_format == &quot;gptq_v2&quot;&lt;&#x2F;code&gt;.&lt;&#x2F;li&gt;
+&lt;li&gt;Add a &lt;code&gt;bool use_v2_format&lt;&#x2F;code&gt; argument to &lt;code&gt;gptq_gemm&lt;&#x2F;code&gt;, which accepts &lt;code&gt;GPTQLinearMethod.use_v2_format&lt;&#x2F;code&gt; as input.&lt;&#x2F;li&gt;
+&lt;li&gt;In &lt;code&gt;gptq_gemm&lt;&#x2F;code&gt;, update the zero point handling logic to be conditioned on &lt;code&gt;use_v2_format&lt;&#x2F;code&gt;. For example:&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;pre data-lang=&quot;c&quot; class=&quot;language-c z-code&quot;&gt;&lt;code class=&quot;language-c&quot; data-lang=&quot;c&quot;&gt;&lt;span class=&quot;z-source z-c&quot;&gt;&lt;span class=&quot;z-comment z-line z-double-slash z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-comment z-c&quot;&gt;&#x2F;&#x2F;&lt;&#x2F;span&gt; In `reconstruct_exllama_2bit_kernel`:
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-c&quot;&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-c&quot;&gt;&lt;span class=&quot;z-comment z-line z-double-slash z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-comment z-c&quot;&gt;&#x2F;&#x2F;&lt;&#x2F;span&gt; Previous: zeros[i] + 1 (hardcoded for GPTQv1)
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-c&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-c&quot;&gt;&lt;span class=&quot;z-variable z-function z-c&quot;&gt;dequant_2bit_16&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-group z-begin z-c&quot;&gt;(&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-c&quot;&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;load_int4&lt;span class=&quot;z-punctuation z-accessor z-c&quot;&gt;.&lt;&#x2F;span&gt;&lt;span class=&quot;z-variable z-other z-member z-c&quot;&gt;x&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; dq&lt;span class=&quot;z-meta z-brackets z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-begin z-c&quot;&gt;[&lt;&#x2F;span&gt;&lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-c&quot;&gt;0&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-end z-c&quot;&gt;]&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; size_n&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; zeros&lt;span class=&quot;z-meta z-brackets z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-begin z-c&quot;&gt;[&lt;&#x2F;span&gt;&lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-c&quot;&gt;0&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-end z-c&quot;&gt;]&lt;&#x2F;span&gt;&lt;&#x2F;span&gt; &lt;span class=&quot;z-keyword z-operator z-arithmetic z-c&quot;&gt;+&lt;&#x2F;span&gt; &lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-c&quot;&gt;1&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-group z-end z-c&quot;&gt;)&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-terminator z-c&quot;&gt;;&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-c&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-c&quot;&gt;&lt;span class=&quot;z-variable z-function z-c&quot;&gt;dequant_2bit_16&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-group z-begin z-c&quot;&gt;(&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-c&quot;&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;load_int4&lt;span class=&quot;z-punctuation z-accessor z-c&quot;&gt;.&lt;&#x2F;span&gt;&lt;span class=&quot;z-variable z-other z-member z-c&quot;&gt;y&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; dq&lt;span class=&quot;z-meta z-brackets z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-begin z-c&quot;&gt;[&lt;&#x2F;span&gt;&lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-c&quot;&gt;1&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-end z-c&quot;&gt;]&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; size_n&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; zeros&lt;span class=&quot;z-meta z-brackets z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-begin z-c&quot;&gt;[&lt;&#x2F;span&gt;&lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-c&quot;&gt;1&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-end z-c&quot;&gt;]&lt;&#x2F;span&gt;&lt;&#x2F;span&gt; &lt;span class=&quot;z-keyword z-operator z-arithmetic z-c&quot;&gt;+&lt;&#x2F;span&gt; &lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-c&quot;&gt;1&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-group z-end z-c&quot;&gt;)&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-terminator z-c&quot;&gt;;&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-c&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-c&quot;&gt;&lt;span class=&quot;z-variable z-function z-c&quot;&gt;dequant_2bit_16&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-group z-begin z-c&quot;&gt;(&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-c&quot;&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;load_int4&lt;span class=&quot;z-punctuation z-accessor z-c&quot;&gt;.&lt;&#x2F;span&gt;&lt;span class=&quot;z-variable z-other z-member z-c&quot;&gt;z&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; dq&lt;span class=&quot;z-meta z-brackets z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-begin z-c&quot;&gt;[&lt;&#x2F;span&gt;&lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-c&quot;&gt;2&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-end z-c&quot;&gt;]&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; size_n&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; zeros&lt;span class=&quot;z-meta z-brackets z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-begin z-c&quot;&gt;[&lt;&#x2F;span&gt;&lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-c&quot;&gt;2&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-end z-c&quot;&gt;]&lt;&#x2F;span&gt;&lt;&#x2F;span&gt; &lt;span class=&quot;z-keyword z-operator z-arithmetic z-c&quot;&gt;+&lt;&#x2F;span&gt; &lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-c&quot;&gt;1&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-group z-end z-c&quot;&gt;)&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-terminator z-c&quot;&gt;;&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-c&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-c&quot;&gt;&lt;span class=&quot;z-variable z-function z-c&quot;&gt;dequant_2bit_16&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-group z-begin z-c&quot;&gt;(&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-c&quot;&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;load_int4&lt;span class=&quot;z-punctuation z-accessor z-c&quot;&gt;.&lt;&#x2F;span&gt;&lt;span class=&quot;z-variable z-other z-member z-c&quot;&gt;w&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; dq&lt;span class=&quot;z-meta z-brackets z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-begin z-c&quot;&gt;[&lt;&#x2F;span&gt;&lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-c&quot;&gt;3&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-end z-c&quot;&gt;]&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; size_n&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; zeros&lt;span class=&quot;z-meta z-brackets z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-begin z-c&quot;&gt;[&lt;&#x2F;span&gt;&lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-c&quot;&gt;3&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-end z-c&quot;&gt;]&lt;&#x2F;span&gt;&lt;&#x2F;span&gt; &lt;span class=&quot;z-keyword z-operator z-arithmetic z-c&quot;&gt;+&lt;&#x2F;span&gt; &lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-c&quot;&gt;1&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-group z-end z-c&quot;&gt;)&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-terminator z-c&quot;&gt;;&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-c&quot;&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-c&quot;&gt;&lt;span class=&quot;z-comment z-line z-double-slash z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-comment z-c&quot;&gt;&#x2F;&#x2F;&lt;&#x2F;span&gt; Now: zeros[i] + offset (conditioned on `use_v2_format`)
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-c&quot;&gt;&lt;span class=&quot;z-storage z-type z-c&quot;&gt;int&lt;&#x2F;span&gt; zero_offset &lt;span class=&quot;z-keyword z-operator z-assignment z-c&quot;&gt;=&lt;&#x2F;span&gt; use_v2_format &lt;span class=&quot;z-keyword z-operator z-ternary z-c&quot;&gt;?&lt;&#x2F;span&gt; &lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-c&quot;&gt;0&lt;&#x2F;span&gt; &lt;span class=&quot;z-keyword z-operator z-ternary z-c&quot;&gt;:&lt;&#x2F;span&gt; &lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-c&quot;&gt;1&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-terminator z-c&quot;&gt;;&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-c&quot;&gt;&lt;span class=&quot;z-keyword z-operator z-variadic z-c&quot;&gt;...&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-c&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-c&quot;&gt;&lt;span class=&quot;z-variable z-function z-c&quot;&gt;dequant_2bit_16&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-group z-begin z-c&quot;&gt;(&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-c&quot;&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;load_int4&lt;span class=&quot;z-punctuation z-accessor z-c&quot;&gt;.&lt;&#x2F;span&gt;&lt;span class=&quot;z-variable z-other z-member z-c&quot;&gt;x&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; dq&lt;span class=&quot;z-meta z-brackets z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-begin z-c&quot;&gt;[&lt;&#x2F;span&gt;&lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-c&quot;&gt;0&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-end z-c&quot;&gt;]&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; size_n&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; zeros&lt;span class=&quot;z-meta z-brackets z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-begin z-c&quot;&gt;[&lt;&#x2F;span&gt;&lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-c&quot;&gt;0&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-end z-c&quot;&gt;]&lt;&#x2F;span&gt;&lt;&#x2F;span&gt; &lt;span class=&quot;z-keyword z-operator z-arithmetic z-c&quot;&gt;+&lt;&#x2F;span&gt; zero_offset&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-group z-end z-c&quot;&gt;)&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-terminator z-c&quot;&gt;;&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-c&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-c&quot;&gt;&lt;span class=&quot;z-variable z-function z-c&quot;&gt;dequant_2bit_16&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-group z-begin z-c&quot;&gt;(&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-c&quot;&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;load_int4&lt;span class=&quot;z-punctuation z-accessor z-c&quot;&gt;.&lt;&#x2F;span&gt;&lt;span class=&quot;z-variable z-other z-member z-c&quot;&gt;y&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; dq&lt;span class=&quot;z-meta z-brackets z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-begin z-c&quot;&gt;[&lt;&#x2F;span&gt;&lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-c&quot;&gt;1&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-end z-c&quot;&gt;]&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; size_n&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; zeros&lt;span class=&quot;z-meta z-brackets z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-begin z-c&quot;&gt;[&lt;&#x2F;span&gt;&lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-c&quot;&gt;1&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-end z-c&quot;&gt;]&lt;&#x2F;span&gt;&lt;&#x2F;span&gt; &lt;span class=&quot;z-keyword z-operator z-arithmetic z-c&quot;&gt;+&lt;&#x2F;span&gt; zero_offset&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-group z-end z-c&quot;&gt;)&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-terminator z-c&quot;&gt;;&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-c&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-c&quot;&gt;&lt;span class=&quot;z-variable z-function z-c&quot;&gt;dequant_2bit_16&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-group z-begin z-c&quot;&gt;(&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-c&quot;&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;load_int4&lt;span class=&quot;z-punctuation z-accessor z-c&quot;&gt;.&lt;&#x2F;span&gt;&lt;span class=&quot;z-variable z-other z-member z-c&quot;&gt;z&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; dq&lt;span class=&quot;z-meta z-brackets z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-begin z-c&quot;&gt;[&lt;&#x2F;span&gt;&lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-c&quot;&gt;2&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-end z-c&quot;&gt;]&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; size_n&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; zeros&lt;span class=&quot;z-meta z-brackets z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-begin z-c&quot;&gt;[&lt;&#x2F;span&gt;&lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-c&quot;&gt;2&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-end z-c&quot;&gt;]&lt;&#x2F;span&gt;&lt;&#x2F;span&gt; &lt;span class=&quot;z-keyword z-operator z-arithmetic z-c&quot;&gt;+&lt;&#x2F;span&gt; zero_offset&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-group z-end z-c&quot;&gt;)&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-terminator z-c&quot;&gt;;&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-c&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-c&quot;&gt;&lt;span class=&quot;z-variable z-function z-c&quot;&gt;dequant_2bit_16&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-group z-begin z-c&quot;&gt;(&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-c&quot;&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;load_int4&lt;span class=&quot;z-punctuation z-accessor z-c&quot;&gt;.&lt;&#x2F;span&gt;&lt;span class=&quot;z-variable z-other z-member z-c&quot;&gt;w&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; dq&lt;span class=&quot;z-meta z-brackets z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-begin z-c&quot;&gt;[&lt;&#x2F;span&gt;&lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-c&quot;&gt;3&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-end z-c&quot;&gt;]&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; size_n&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; zeros&lt;span class=&quot;z-meta z-brackets z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-begin z-c&quot;&gt;[&lt;&#x2F;span&gt;&lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-c&quot;&gt;3&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-end z-c&quot;&gt;]&lt;&#x2F;span&gt;&lt;&#x2F;span&gt; &lt;span class=&quot;z-keyword z-operator z-arithmetic z-c&quot;&gt;+&lt;&#x2F;span&gt; zero_offset&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-group z-end z-c&quot;&gt;)&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-terminator z-c&quot;&gt;;&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-c&quot;&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
+&lt;blockquote&gt;
+&lt;p&gt;When testing, I found that the original &lt;code&gt;gptq_gemm&lt;&#x2F;code&gt; is buggy at 4-bit even with symmetrically quantized model of GPTQv1 format — out of scope of this PR.&lt;&#x2F;p&gt;
+&lt;&#x2F;blockquote&gt;
+&lt;p&gt;To ensure Pt. 3, review &lt;a href=&quot;https:&#x2F;&#x2F;xxxxyu.github.io&#x2F;blog&#x2F;posts&#x2F;vllm-gptqv2-support&#x2F;#vllm-s-support-for-gptq-v2-format&quot;&gt;vLLM’s Support for GPTQ(v2) Format&lt;&#x2F;a&gt; — both &lt;code&gt;GPTQMarlinLinearMethod&lt;&#x2F;code&gt; and &lt;code&gt;GPTQBitBLASLinearMethod&lt;&#x2F;code&gt; are not affected, as they already support GPTQv2 format, though limited to 4&#x2F;8-bit symmetric quantization.&lt;&#x2F;p&gt;
+&lt;blockquote&gt;
+&lt;p&gt;TODO: Add some performance benchmarks.
+Currently I’ve found that 2-bit gptq_gemm is slower during decoding (GeMV) than prefilling (GeMM).&lt;&#x2F;p&gt;
+&lt;&#x2F;blockquote&gt;
+&lt;h2 id=&quot;conclusion&quot;&gt;Conclusion&lt;&#x2F;h2&gt;
+&lt;p&gt;This post details the development of GPTQv2 format support in vLLM, which addresses a significant gap in low-bit asymmetric quantization inference with SOTA LLM inference frameworks.&lt;&#x2F;p&gt;
+&lt;p&gt;Questions and discussions are welcomed.&lt;&#x2F;p&gt;
+&lt;p&gt;&lt;strong&gt;Possible future works:&lt;&#x2F;strong&gt;&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;Extend optimized kernels (Marlin, BitBLAS) to support 2&#x2F;3-bit or asymmetric quantization.&lt;&#x2F;li&gt;
+&lt;li&gt;Fix the 4-bit bug in &lt;code&gt;gptq_gemm&lt;&#x2F;code&gt;.&lt;&#x2F;li&gt;
+&lt;li&gt;Improve the decoding speed with &lt;code&gt;gptq_gemm&lt;&#x2F;code&gt;.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;hr&gt;&lt;ol class=&quot;footnotes-list&quot;&gt;
+&lt;li id=&quot;fn-1&quot;&gt;
+&lt;p&gt;Frantar, Elias, et al. “GPTQ: Accurate Post-Training Quantization for Generative Pre-Trained Transformers.” arXiv preprint arXiv:2210.17323 (2022). &lt;a href=&quot;#fr-1-1&quot;&gt;↩&lt;&#x2F;a&gt;&lt;&#x2F;p&gt;
+&lt;&#x2F;li&gt;
+&lt;li id=&quot;fn-2&quot;&gt;
+&lt;p&gt;Li, Yuhang, et al. “GPTAQ: Efficient Finetuning-Free Quantization for Asymmetric Calibration.” arXiv preprint arXiv:2504.02692 (2025). &lt;a href=&quot;#fr-2-1&quot;&gt;↩&lt;&#x2F;a&gt;&lt;&#x2F;p&gt;
+&lt;&#x2F;li&gt;
+&lt;li id=&quot;fn-3&quot;&gt;
+&lt;p&gt;de Kok, Daniël. “GPTQ Checkpoint Format.” Daniël’s Website, 7 Aug. 2024, danieldk.eu&#x2F;GPTQ-Checkpoint-Format. &lt;a href=&quot;#fr-3-1&quot;&gt;↩&lt;&#x2F;a&gt;&lt;&#x2F;p&gt;
+&lt;&#x2F;li&gt;
+&lt;&#x2F;ol&gt;
+</content>
+        <summary type="html">Deep technical analysis of GPTQv2 format limitations in vLLM, and implementation of CUDA kernel adaptations to enable efficient low-bit&#x2F;asymmetric quantization inference.</summary>
+        </entry><entry xml:lang="en">
+        <title>Cheatsheet for Setting up Android Smartphones</title>
+        <published>2025-01-09T00:00:00+00:00</published>
+        <updated>2025-08-04T00:00:00+00:00</updated>
+        <author>
+            <name>Xiangyu Li</name>
+        </author>
+        <link rel="alternate" href="https://xxxxyu.github.io/blog/posts/edge-development-cheatsheet/smartphone-setup-cheatsheet/" type="text/html"/>
+        <id>https://xxxxyu.github.io/blog/posts/edge-development-cheatsheet/smartphone-setup-cheatsheet/</id>
+        
+            <content type="html">&lt;p&gt;This is mostly based on my personal development requirements, which are focused on AI-related computing tasks. Specifically, I run DNNs in a Linux-like environment. So it might not perfectly suits you if you’re more interested in App development and GUI debugging.&lt;&#x2F;p&gt;
+&lt;h2 id=&quot;first-boot&quot;&gt;First Boot&lt;&#x2F;h2&gt;
+&lt;h3 id=&quot;register&quot;&gt;Register&lt;&#x2F;h3&gt;
+&lt;p&gt;Register your new device to activate the warranty (if you are not going to root the system).&lt;&#x2F;p&gt;
+&lt;h2 id=&quot;root-the-system&quot;&gt;Root the System&lt;&#x2F;h2&gt;
+&lt;p&gt;Root is required to obtain advanced system control (as super user).&lt;&#x2F;p&gt;
+&lt;p&gt;Magisk 中文网教程：&lt;a href=&quot;https:&#x2F;&#x2F;magiskcn.com&quot;&gt;https:&#x2F;&#x2F;magiskcn.com&lt;&#x2F;a&gt;&lt;&#x2F;p&gt;
+&lt;p&gt;This section continues with an OnePlus example, as it is the most root-friendly Chinese smartphone brand.&lt;&#x2F;p&gt;
+&lt;p&gt;Requirements:&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;ADB (Android Debug Bridge): &lt;a href=&quot;https:&#x2F;&#x2F;developer.android.com&#x2F;tools&#x2F;releases&#x2F;platform-tools&quot;&gt;platform-tools&lt;&#x2F;a&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;Android OTA payload dumper: &lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;ssut&#x2F;payload-dumper-go&quot;&gt;payload-dumper-go&lt;&#x2F;a&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;System ROM: &lt;a href=&quot;https:&#x2F;&#x2F;magiskcn.com&#x2F;roms.html&quot;&gt;MagiskCN&lt;&#x2F;a&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;Magisk APK: &lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;topjohnwu&#x2F;Magisk&#x2F;releases&quot;&gt;GitHub Release&lt;&#x2F;a&gt;&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h3 id=&quot;unlock-bootloader&quot;&gt;Unlock Bootloader&lt;&#x2F;h3&gt;
+&lt;p&gt;Magisk 中文网教程：&lt;a href=&quot;https:&#x2F;&#x2F;magiskcn.com&#x2F;oneplus-unlock-qualcomm#google_vignette&quot;&gt;https:&#x2F;&#x2F;magiskcn.com&#x2F;oneplus-unlock-qualcomm#google_vignette&lt;&#x2F;a&gt;&lt;&#x2F;p&gt;
+&lt;ol&gt;
+&lt;li&gt;Enter developer mode&lt;&#x2F;li&gt;
+&lt;li&gt;OEM unlock (depends on vendors)&lt;&#x2F;li&gt;
+&lt;li&gt;Connect to the host PC with USB debugging&lt;&#x2F;li&gt;
+&lt;li&gt;Enter bootloader: &lt;code&gt;adb reboot bootloader&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;Unlock bootloader: &lt;code&gt;bootloader flashing unlock&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;On the smartphone, select “unlock the bootloader” and confirm.&lt;&#x2F;li&gt;
+&lt;&#x2F;ol&gt;
+&lt;h3 id=&quot;root-with-magisk&quot;&gt;Root with Magisk&lt;&#x2F;h3&gt;
+&lt;p&gt;Magisk 中文网教程：&lt;a href=&quot;https:&#x2F;&#x2F;magiskcn.com&#x2F;oneplus-init-boot&quot;&gt;https:&#x2F;&#x2F;magiskcn.com&#x2F;oneplus-init-boot&lt;&#x2F;a&gt;&lt;&#x2F;p&gt;
+&lt;ol&gt;
+&lt;li&gt;On the host PC, download the matching ROM package and extract&lt;&#x2F;li&gt;
+&lt;li&gt;Extract init_boot.img from the ROM with the payload dumper
+&lt;ul&gt;
+&lt;li&gt;Usage: &lt;code&gt;payload-dumper-go -p init_boot &amp;lt;extracted&amp;gt;&#x2F;payload.bin&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;Connect to the smartphone with USB debugging&lt;&#x2F;li&gt;
+&lt;li&gt;Transfer init_boot.img to the smartphone’s “Download” folder&lt;&#x2F;li&gt;
+&lt;li&gt;Install Magisk app to the smartphone&lt;&#x2F;li&gt;
+&lt;li&gt;In Magisk app, “Install” init_boot.img to obtain “magisk_patched-xxx.img”&lt;&#x2F;li&gt;
+&lt;li&gt;Transfer “magisk_patched-xxx.img” back to the host PC&lt;&#x2F;li&gt;
+&lt;li&gt;Enter bootloader: &lt;code&gt;adb reboot bootloader&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;Flash the patch: &lt;code&gt;fastboot flash init_boot magisk_patched-xxx.img&lt;&#x2F;code&gt;
+&lt;ul&gt;
+&lt;li&gt;You should see “Okay” if it succeeds.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;Reboot the system: &lt;code&gt;fastboot reboot&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;&#x2F;ol&gt;
+&lt;p&gt;After rebooting, enter the Magisk app and check the “Magisk” version. You should be able to see the correct version displayed after a successful rooting.&lt;&#x2F;p&gt;
+&lt;h2 id=&quot;system-setting&quot;&gt;System Setting&lt;&#x2F;h2&gt;
+&lt;h3 id=&quot;developer-option&quot;&gt;Developer Option&lt;&#x2F;h3&gt;
+&lt;ul&gt;
+&lt;li&gt;Turn on developer option&lt;&#x2F;li&gt;
+&lt;li&gt;Turn on USB debugging&lt;&#x2F;li&gt;
+&lt;li&gt;Turn on wireless debugging (if you prefer)&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h3 id=&quot;system-update&quot;&gt;System Update&lt;&#x2F;h3&gt;
+&lt;p&gt;It is recommended to turn off all settings that might influence system performance and version stability. Specifically:&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;Turn off unecessary (background) services&lt;&#x2F;li&gt;
+&lt;li&gt;Turn off system auto-update and auto-download&lt;&#x2F;li&gt;
+&lt;li&gt;Remove auto-installed apps&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h3 id=&quot;battery-management&quot;&gt;Battery Management&lt;&#x2F;h3&gt;
+&lt;ul&gt;
+&lt;li&gt;Turn on “performance mode” in system-wide battery settings&lt;&#x2F;li&gt;
+&lt;li&gt;Turn on “allow background” in app-wise battery settings&lt;&#x2F;li&gt;
+&lt;li&gt;Select “acquire wakelock” for Termux processes and alike&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h2 id=&quot;apps&quot;&gt;Apps&lt;&#x2F;h2&gt;
+&lt;p&gt;How to install:&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;Install from app stores (Google Play, F-Droid, etc.)&lt;&#x2F;li&gt;
+&lt;li&gt;Install from web-downloaded APK (Android Application Package)&lt;&#x2F;li&gt;
+&lt;li&gt;Install from host PC by ADB (APK required)&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h3 id=&quot;clash-for-android-cfa&quot;&gt;Clash for Android (CFA)&lt;&#x2F;h3&gt;
+&lt;p&gt;First and foremost, setup the proxy.&lt;&#x2F;p&gt;
+&lt;p&gt;TODO: details&lt;&#x2F;p&gt;
+&lt;h3 id=&quot;f-droid&quot;&gt;F-Droid&lt;&#x2F;h3&gt;
+&lt;p&gt;F-Droid is an installable catalogue of FOSS (Free and Open Source Software) applications for the Android platform. Use it as an alternative to Google Play.&lt;&#x2F;p&gt;
+&lt;p&gt;F-Droid site: &lt;a href=&quot;https:&#x2F;&#x2F;f-droid.org&#x2F;&quot;&gt;https:&#x2F;&#x2F;f-droid.org&#x2F;&lt;&#x2F;a&gt;&lt;&#x2F;p&gt;
+&lt;h3 id=&quot;termux&quot;&gt;Termux&lt;&#x2F;h3&gt;
+&lt;p&gt;Installation by F-Droid is recommended.&lt;&#x2F;p&gt;
+&lt;p&gt;Check out the &lt;a href=&quot;https:&#x2F;&#x2F;xxxxyu.github.io&#x2F;blog&#x2F;articles&#x2F;termux-setup-cheatsheet&#x2F;&quot;&gt;Termux Setup Cheatsheet&lt;&#x2F;a&gt;.&lt;&#x2F;p&gt;
+&lt;h3 id=&quot;microsoft-edge&quot;&gt;Microsoft Edge&lt;&#x2F;h3&gt;
+&lt;p&gt;Use it as an alternative to the system default browser, which often has limited functionalities.&lt;&#x2F;p&gt;
+&lt;p&gt;I recommend Edge as it is the most available one (in Chinese app stores).&lt;&#x2F;p&gt;
+</content>
+        <summary type="html">Quickly setting up Android smartphones for development.</summary>
+        </entry><entry xml:lang="en">
+        <title>Cheatsheet for Setting up Termux on Android Smartphones</title>
+        <published>2025-01-09T00:00:00+00:00</published>
+        <updated>2025-01-09T00:00:00+00:00</updated>
+        <author>
+            <name>Xiangyu Li</name>
+        </author>
+        <link rel="alternate" href="https://xxxxyu.github.io/blog/posts/edge-development-cheatsheet/termux-setup-cheatsheet/" type="text/html"/>
+        <id>https://xxxxyu.github.io/blog/posts/edge-development-cheatsheet/termux-setup-cheatsheet/</id>
+        
+            <content type="html">&lt;p&gt;&lt;a href=&quot;https:&#x2F;&#x2F;termux.dev&#x2F;en&#x2F;&quot;&gt;Termux&lt;&#x2F;a&gt; is a useful software for emulating Linux environment in Android (much better than the ADB shell). As part of the &lt;a href=&quot;https:&#x2F;&#x2F;xxxxyu.github.io&#x2F;blog&#x2F;articles&#x2F;smartphone-setup-cheatsheet&#x2F;&quot;&gt;Smartphone Setup Cheatsheet&lt;&#x2F;a&gt;, this article elaborates on how to setup Termux.&lt;&#x2F;p&gt;
+&lt;p&gt;Also note that this is mostly based on my personal development requirements, which are focused on AI-related computing tasks. It might not perfectly suits you if you’re more interested in App development and GUI debugging.&lt;&#x2F;p&gt;
+&lt;p&gt;A useful repo: &lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;sanwebinfo&#x2F;my-termux-setup&quot;&gt;sanwebinfo&#x2F;my-termux-setup&lt;&#x2F;a&gt;&lt;&#x2F;p&gt;
+&lt;h2 id=&quot;installation&quot;&gt;Installation&lt;&#x2F;h2&gt;
+&lt;ul&gt;
+&lt;li&gt;Install from &lt;a href=&quot;https:&#x2F;&#x2F;f-droid.org&#x2F;&quot;&gt;F-Droid&lt;&#x2F;a&gt; to get convenient plugin support
+&lt;ul&gt;
+&lt;li&gt;Termux: Style&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;Install from APK if you prefer. Download from &lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;termux&#x2F;termux-app&#x2F;releases&quot;&gt;GitHub Release&lt;&#x2F;a&gt;&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h2 id=&quot;system-setup&quot;&gt;System Setup&lt;&#x2F;h2&gt;
+&lt;p&gt;System-level setup for Termux.&lt;&#x2F;p&gt;
+&lt;h3 id=&quot;update-packages&quot;&gt;Update packages&lt;&#x2F;h3&gt;
+&lt;ul&gt;
+&lt;li&gt;Select mirrors automatically: &lt;code&gt;termux-change-repo&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;Update and upgrade: &lt;code&gt;pkg update &amp;amp;&amp;amp; pkg upgrade&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h3 id=&quot;setup-ssh&quot;&gt;Setup SSH&lt;&#x2F;h3&gt;
+&lt;ul&gt;
+&lt;li&gt;Install OpenSSH: &lt;code&gt;pkg install openssh&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;Check Termux username: &lt;code&gt;whoami&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;Set login password: &lt;code&gt;passwd&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;Get IP address: &lt;code&gt;ifconfig&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;Launch SSH server: &lt;code&gt;sshd&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;Connect from remote: &lt;code&gt;ssh -p 8022 &amp;lt;username&amp;gt;@&amp;lt;ip&amp;gt;&lt;&#x2F;code&gt;
+&lt;ul&gt;
+&lt;li&gt;The default SSH port of Termux is 8022&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h3 id=&quot;install-packages&quot;&gt;Install packages&lt;&#x2F;h3&gt;
+&lt;p&gt;Common packages during system setup:&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;Tsu (su wrapper for Termux): &lt;code&gt;pkg install tsu&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;Git: &lt;code&gt;pkg install git&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;Wget: &lt;code&gt;pkg install wget&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;cURL: &lt;code&gt;pkg install curl&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;CMake: &lt;code&gt;pkg install cmake&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;tmux: &lt;code&gt;pkg install tmux&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;htop: &lt;code&gt;pkg install htop&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h2 id=&quot;environment-setup&quot;&gt;Environment Setup&lt;&#x2F;h2&gt;
+&lt;p&gt;Set up development environments.&lt;&#x2F;p&gt;
+&lt;h3 id=&quot;code&quot;&gt;Code&lt;&#x2F;h3&gt;
+&lt;p&gt;Termux doesn’t support VSC (Visual Studio Code) remote server, but you can set up an open-source &lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;coder&#x2F;code-server&quot;&gt;code-server&lt;&#x2F;a&gt; as an alternative.&lt;&#x2F;p&gt;
+&lt;p&gt;Install code-server via Tur repo:&lt;&#x2F;p&gt;
+&lt;pre data-lang=&quot;sh&quot; class=&quot;language-sh z-code&quot;&gt;&lt;code class=&quot;language-sh&quot; data-lang=&quot;sh&quot;&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-shell&quot;&gt;&lt;span class=&quot;z-variable z-function z-shell&quot;&gt;pkg&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt; install tur-repo&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-shell&quot;&gt;&lt;span class=&quot;z-variable z-function z-shell&quot;&gt;pkg&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt; install code-server&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
+&lt;p&gt;Configure the server via &lt;code&gt;~&#x2F;.config&#x2F;code-server&#x2F;config.yaml&lt;&#x2F;code&gt;. For example:&lt;&#x2F;p&gt;
+&lt;pre data-lang=&quot;yaml&quot; class=&quot;language-yaml z-code&quot;&gt;&lt;code class=&quot;language-yaml&quot; data-lang=&quot;yaml&quot;&gt;&lt;span class=&quot;z-source z-yaml&quot;&gt;&lt;span class=&quot;z-string z-unquoted z-plain z-out z-yaml&quot;&gt;&lt;span class=&quot;z-entity z-name z-tag z-yaml&quot;&gt;bind-addr&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-separator z-key-value z-mapping z-yaml&quot;&gt;:&lt;&#x2F;span&gt; &lt;span class=&quot;z-string z-unquoted z-plain z-out z-yaml&quot;&gt;0.0.0.0:8080&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-yaml&quot;&gt;&lt;span class=&quot;z-string z-unquoted z-plain z-out z-yaml&quot;&gt;&lt;span class=&quot;z-entity z-name z-tag z-yaml&quot;&gt;auth&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-separator z-key-value z-mapping z-yaml&quot;&gt;:&lt;&#x2F;span&gt; &lt;span class=&quot;z-string z-unquoted z-plain z-out z-yaml&quot;&gt;password&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
+&lt;p&gt;Launch the server:&lt;&#x2F;p&gt;
+&lt;pre data-lang=&quot;sh&quot; class=&quot;language-sh z-code&quot;&gt;&lt;code class=&quot;language-sh&quot; data-lang=&quot;sh&quot;&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-shell&quot;&gt;&lt;span class=&quot;z-variable z-function z-shell&quot;&gt;code-server&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
+&lt;p&gt;Now you will be able to access the code UI via &lt;a href=&quot;http:&#x2F;&#x2F;ip:8080&quot;&gt;http:&#x2F;&#x2F;ip:8080&lt;&#x2F;a&gt; with the configured password.&lt;&#x2F;p&gt;
+&lt;p&gt;Note that the config path will be slightly different (under &lt;code&gt;~&#x2F;.tsu&lt;&#x2F;code&gt;) if you run in &lt;code&gt;tsu&lt;&#x2F;code&gt; mode.&lt;&#x2F;p&gt;
+&lt;h3 id=&quot;python&quot;&gt;Python&lt;&#x2F;h3&gt;
+&lt;p&gt;Termux doesn’t support miniconda.&lt;&#x2F;p&gt;
+&lt;p&gt;Install Python: &lt;code&gt;pkg install python&lt;&#x2F;code&gt;&lt;&#x2F;p&gt;
+</content>
+        <summary type="html">Quickly setting up Termux on Android smartphones for development.</summary>
+        </entry><entry xml:lang="en">
+        <title>Cheatsheet for Setting up Pi Devices</title>
+        <published>2025-01-03T00:00:00+00:00</published>
+        <updated>2025-08-04T00:00:00+00:00</updated>
+        <author>
+            <name>Xiangyu Li</name>
+        </author>
+        <link rel="alternate" href="https://xxxxyu.github.io/blog/posts/edge-development-cheatsheet/pi-setup-cheatsheet/" type="text/html"/>
+        <id>https://xxxxyu.github.io/blog/posts/edge-development-cheatsheet/pi-setup-cheatsheet/</id>
+        
+            <content type="html">&lt;p&gt;This is mostly based on my personal development requirements. It is best applicable for boards like Orange Pi and Raspberry Pi.&lt;&#x2F;p&gt;
+&lt;h2 id=&quot;hardware&quot;&gt;Hardware&lt;&#x2F;h2&gt;
+&lt;h3 id=&quot;network-connection&quot;&gt;Network connection&lt;&#x2F;h3&gt;
+&lt;p&gt;Wired or wireless&lt;&#x2F;p&gt;
+&lt;h3 id=&quot;keyboard-mouse-and-display&quot;&gt;Keyboard, mouse, and display&lt;&#x2F;h3&gt;
+&lt;p&gt;For first-boot setup and local debugging&lt;&#x2F;p&gt;
+&lt;h3 id=&quot;tf-microsd-card-with-os-flashed&quot;&gt;TF (MicroSD) card with OS flashed&lt;&#x2F;h3&gt;
+&lt;ul&gt;
+&lt;li&gt;Ubuntu latest LTS recommended for general development
+&lt;ul&gt;
+&lt;li&gt;I prefer server OS over desktop ones cuz it’s more lightweight&lt;&#x2F;li&gt;
+&lt;li&gt;It also prevents the GUI affecting performance measurement&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;If money allows, buy a larger card yourself (&amp;gt;=256GB in my case)
+&lt;ul&gt;
+&lt;li&gt;The default 32&#x2F;64GB is insufficient for many tasks&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;Imaging tools: &lt;a href=&quot;https:&#x2F;&#x2F;etcher.balena.io&#x2F;#download-etcher&quot;&gt;BalenaEtcher&lt;&#x2F;a&gt; (general), and &lt;a href=&quot;https:&#x2F;&#x2F;www.raspberrypi.com&#x2F;software&#x2F;&quot;&gt;Raspberry Pi Imager&lt;&#x2F;a&gt; (R Pi)
+&lt;ul&gt;
+&lt;li&gt;R Pi Imager supports headless setup through customized configuration&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h2 id=&quot;system&quot;&gt;System&lt;&#x2F;h2&gt;
+&lt;h3 id=&quot;set-change-the-username-and-password-if-required&quot;&gt;Set&#x2F;change the username and password if required&lt;&#x2F;h3&gt;
+&lt;ul&gt;
+&lt;li&gt;Recommended format: device (raspi, orangepi) [+ user info (if not shared)]&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h3 id=&quot;connect-to-the-wireless-network&quot;&gt;Connect to the (wireless) network&lt;&#x2F;h3&gt;
+&lt;ul&gt;
+&lt;li&gt;On R Pi, you can perform a headless setup to automatically connect
+&lt;ul&gt;
+&lt;li&gt;The network is managed by &lt;code&gt;cloud-init&lt;&#x2F;code&gt;, &lt;code&gt;netplan&lt;&#x2F;code&gt;, and &lt;code&gt;networkd&lt;&#x2F;code&gt; by default.&lt;&#x2F;li&gt;
+&lt;li&gt;I switched to &lt;code&gt;NetworkManager&lt;&#x2F;code&gt; as it’s more familiar.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;On others, use the &lt;code&gt;NetworkManager&lt;&#x2F;code&gt; with Ubuntu
+&lt;ul&gt;
+&lt;li&gt;Detect available networks: &lt;code&gt;nmcli dev wifi&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;Connect by ssid: &lt;code&gt;nmcli dev wifi connect &amp;lt;ssid&amp;gt; password &amp;lt;passwd&amp;gt;&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h3 id=&quot;configure-the-network-if-required&quot;&gt;Configure the network if required&lt;&#x2F;h3&gt;
+&lt;ul&gt;
+&lt;li&gt;Tsinghua TUNET authentication: &lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;z4yx&#x2F;GoAuthing&#x2F;&quot;&gt;GoAuthing&lt;&#x2F;a&gt;
+&lt;ul&gt;
+&lt;li&gt;If there’s proxy issue to access GitHub, it’s available on &lt;a href=&quot;https:&#x2F;&#x2F;mirrors.tuna.tsinghua.edu.cn&#x2F;github-release&#x2F;z4yx&#x2F;GoAuthing&#x2F;LatestRelease&#x2F;&quot;&gt;TUNA&lt;&#x2F;a&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;Linux arm64 pre-built binaries: &lt;a href=&quot;https:&#x2F;&#x2F;mirrors.tuna.tsinghua.edu.cn&#x2F;github-release&#x2F;z4yx&#x2F;GoAuthing&#x2F;LatestRelease&#x2F;auth-thu.linux.arm64&quot;&gt;auth-thu.linux.arm64&lt;&#x2F;a&gt;&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;Setup the proxy: TODO
+&lt;ul&gt;
+&lt;li&gt;Make sure not to allow LAN connection in public network&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h3 id=&quot;install-update-necessary-packages&quot;&gt;Install&#x2F;update necessary packages&lt;&#x2F;h3&gt;
+&lt;ul&gt;
+&lt;li&gt;Switch sources when needed&lt;&#x2F;li&gt;
+&lt;li&gt;Update and upgrade first: &lt;code&gt;sudo apt update &amp;amp;&amp;amp; sudo apt upgrade&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h3 id=&quot;setup-ssh-server-for-remote-access&quot;&gt;Setup SSH server for remote access&lt;&#x2F;h3&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;sshd&lt;&#x2F;code&gt; to launch the SSH server&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;code&gt;ifconfig&lt;&#x2F;code&gt; to view the device IP&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;code&gt;ssh -p &amp;lt;port&amp;gt; user@ip&lt;&#x2F;code&gt; to test login&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;code&gt;ssh-copy-id&lt;&#x2F;code&gt; for key auth&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h3 id=&quot;others&quot;&gt;Others&lt;&#x2F;h3&gt;
+&lt;p&gt;(Optional) use vendor-provided tools like &lt;code&gt;raspi-config&lt;&#x2F;code&gt; (for Raspberry Pi) and &lt;code&gt;orangepi-config&lt;&#x2F;code&gt; (for Orange Pi) for more interactive configuration.&lt;&#x2F;p&gt;
+&lt;h2 id=&quot;environment&quot;&gt;Environment&lt;&#x2F;h2&gt;
+&lt;h3 id=&quot;basic-tools-and-packages&quot;&gt;Basic tools and packages&lt;&#x2F;h3&gt;
+&lt;ul&gt;
+&lt;li&gt;tmux: &lt;code&gt;sudo apt install tmux&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;git: &lt;code&gt;sudo apt install git&lt;&#x2F;code&gt;
+&lt;ul&gt;
+&lt;li&gt;Copy SSH public key to GitHub to clone with SSH&lt;&#x2F;li&gt;
+&lt;li&gt;Config username and email to commit&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;code-server (if platform doesn’t support VSC Remote)&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h3 id=&quot;build-tools-and-compilers&quot;&gt;Build tools and compilers&lt;&#x2F;h3&gt;
+&lt;ul&gt;
+&lt;li&gt;CMake (&amp;gt;=3.22 for most projects)
+&lt;ul&gt;
+&lt;li&gt;Install via apt: &lt;code&gt;sudo apt install cmake&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;Install from official website: &lt;a href=&quot;https:&#x2F;&#x2F;cmake.org&#x2F;download&#x2F;&quot;&gt;download page&lt;&#x2F;a&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;Update to latest: &lt;a href=&quot;https:&#x2F;&#x2F;xxxxyu.github.io&#x2F;blog&#x2F;posts&#x2F;edge-development-cheatsheet&#x2F;pi-setup-cheatsheet&#x2F;#cmake-update&quot;&gt;CMake update&lt;&#x2F;a&gt;&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;GCC
+&lt;ul&gt;
+&lt;li&gt;Install via apt: &lt;code&gt;sudo apt install build-essential&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;LLVM + Clang
+&lt;ul&gt;
+&lt;li&gt;Install from official website: &lt;a href=&quot;https:&#x2F;&#x2F;apt.llvm.org&#x2F;&quot;&gt;download page&lt;&#x2F;a&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;One-liner to install latest: &lt;code&gt;bash -c &quot;$(wget -O - https:&#x2F;&#x2F;apt.llvm.org&#x2F;llvm.sh)&quot;&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;Note: when multiple compilers (GCC, Clang, and different versions) are installed, make sure the &lt;code&gt;$CC&lt;&#x2F;code&gt; and &lt;code&gt;$CXX&lt;&#x2F;code&gt; enviroment variables are correctly set, or the building tools (e.g., CMake) might use the wrong compiler and cause errors&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h3 id=&quot;python-environments&quot;&gt;Python environments&lt;&#x2F;h3&gt;
+&lt;ul&gt;
+&lt;li&gt;Miniconda
+&lt;ul&gt;
+&lt;li&gt;Preferred for most cases&lt;&#x2F;li&gt;
+&lt;li&gt;One-liner installation (mind the OS and arch)
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;curl -O https:&#x2F;&#x2F;repo.anaconda.com&#x2F;miniconda&#x2F;Miniconda3-latest-Linux-aarch64.sh&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;code&gt;bash ~&#x2F;Miniconda3-latest-Linux-aarch64.sh&lt;&#x2F;code&gt;
+&lt;ul&gt;
+&lt;li&gt;No &lt;code&gt;sudo&lt;&#x2F;code&gt; or will be installed to another location&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;Press Enter and type yes after reading the agreement&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;Virtualenv
+&lt;ul&gt;
+&lt;li&gt;If the project specifies&lt;&#x2F;li&gt;
+&lt;li&gt;Install via apt: &lt;code&gt;sudo apt install python3-venv&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;Note: when both conda and virtualenv are installed, make sure the correct environment is activated (they seem the same from the terminal)&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h3 id=&quot;containers&quot;&gt;Containers&lt;&#x2F;h3&gt;
+&lt;ul&gt;
+&lt;li&gt;Docker: TODO&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h2 id=&quot;quick-fix&quot;&gt;Quick Fix&lt;&#x2F;h2&gt;
+&lt;h3 id=&quot;cmake-update&quot;&gt;CMake update&lt;&#x2F;h3&gt;
+&lt;p&gt;Update latest CMake on Ubuntu (generated by Claude):&lt;&#x2F;p&gt;
+&lt;pre data-lang=&quot;sh&quot; class=&quot;language-sh z-code&quot;&gt;&lt;code class=&quot;language-sh&quot; data-lang=&quot;sh&quot;&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-shell&quot;&gt;&lt;span class=&quot;z-variable z-function z-shell&quot;&gt;sudo&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt; apt remove&lt;span class=&quot;z-variable z-parameter z-option z-shell&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-parameter z-shell&quot;&gt; --&lt;&#x2F;span&gt;purge&lt;&#x2F;span&gt; cmake&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-shell&quot;&gt;&lt;span class=&quot;z-variable z-function z-shell&quot;&gt;sudo&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt; apt purge cmake&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-shell&quot;&gt;&lt;span class=&quot;z-variable z-function z-shell&quot;&gt;sudo&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt; apt autoremove&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-shell&quot;&gt;&lt;span class=&quot;z-variable z-function z-shell&quot;&gt;wget&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt;&lt;span class=&quot;z-variable z-parameter z-option z-shell&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-parameter z-shell&quot;&gt; -&lt;&#x2F;span&gt;O&lt;&#x2F;span&gt; - https:&#x2F;&#x2F;apt.kitware.com&#x2F;keys&#x2F;kitware-archive-latest.asc &lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-file-descriptor z-shell&quot;&gt;2&lt;&#x2F;span&gt;&lt;span class=&quot;z-keyword z-operator z-assignment z-redirection z-shell&quot;&gt;&amp;gt;&lt;&#x2F;span&gt;&#x2F;dev&#x2F;null&lt;&#x2F;span&gt; &lt;span class=&quot;z-keyword z-operator z-logical z-pipe z-shell&quot;&gt;|&lt;&#x2F;span&gt; &lt;span class=&quot;z-meta z-function-call z-shell&quot;&gt;&lt;span class=&quot;z-variable z-function z-shell&quot;&gt;gpg&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt;&lt;span class=&quot;z-variable z-parameter z-option z-shell&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-parameter z-shell&quot;&gt; --&lt;&#x2F;span&gt;dearmor&lt;&#x2F;span&gt; -&lt;&#x2F;span&gt; &lt;span class=&quot;z-keyword z-operator z-logical z-pipe z-shell&quot;&gt;|&lt;&#x2F;span&gt; &lt;span class=&quot;z-meta z-function-call z-shell&quot;&gt;&lt;span class=&quot;z-variable z-function z-shell&quot;&gt;sudo&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt; tee &#x2F;etc&#x2F;apt&#x2F;trusted.gpg.d&#x2F;kitware.gpg &lt;span class=&quot;z-keyword z-operator z-assignment z-redirection z-shell&quot;&gt;&amp;gt;&lt;&#x2F;span&gt;&#x2F;dev&#x2F;null&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-shell&quot;&gt;&lt;span class=&quot;z-variable z-function z-shell&quot;&gt;sudo&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt; add-apt-repository &lt;span class=&quot;z-string z-quoted z-double z-shell&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-string z-begin z-shell&quot;&gt;&amp;quot;&lt;&#x2F;span&gt;deb https:&#x2F;&#x2F;apt.kitware.com&#x2F;ubuntu&#x2F; &lt;span class=&quot;z-meta z-group z-expansion z-command z-parens z-shell&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-variable z-shell&quot;&gt;$&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-parens z-begin z-shell&quot;&gt;(&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-shell&quot;&gt;&lt;span class=&quot;z-variable z-function z-shell&quot;&gt;lsb_release&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt;&lt;span class=&quot;z-variable z-parameter z-option z-shell&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-parameter z-shell&quot;&gt; -&lt;&#x2F;span&gt;cs&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-parens z-end z-shell&quot;&gt;)&lt;&#x2F;span&gt;&lt;&#x2F;span&gt; main&lt;span class=&quot;z-punctuation z-definition z-string z-end z-shell&quot;&gt;&amp;quot;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-shell&quot;&gt;&lt;span class=&quot;z-variable z-function z-shell&quot;&gt;sudo&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt; apt update&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-shell&quot;&gt;&lt;span class=&quot;z-variable z-function z-shell&quot;&gt;sudo&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt; apt install cmake&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
+&lt;h3 id=&quot;compiler&quot;&gt;Compiler&lt;&#x2F;h3&gt;
+&lt;p&gt;Install latest standard library: &lt;code&gt;sudo apt install libstdc++-12-dev&lt;&#x2F;code&gt;&lt;&#x2F;p&gt;
+&lt;h3 id=&quot;git-clone&quot;&gt;Git Clone&lt;&#x2F;h3&gt;
+&lt;p&gt;One-liner to use SSH url: &lt;code&gt;sed -i &#x27;s&#x2F;https:\&#x2F;\&#x2F;github.com\&#x2F;&#x2F;git@github.com:&#x2F;&#x27; .gitmodules&lt;&#x2F;code&gt;&lt;&#x2F;p&gt;
+&lt;p&gt;Recursive script:&lt;&#x2F;p&gt;
+&lt;pre data-lang=&quot;sh&quot; class=&quot;language-sh z-code&quot;&gt;&lt;code class=&quot;language-sh&quot; data-lang=&quot;sh&quot;&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-comment z-line z-number-sign z-shell&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-comment z-begin z-shell&quot;&gt;#&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-comment z-line z-number-sign z-shell&quot;&gt; Function to update .gitmodules and sync&lt;&#x2F;span&gt;&lt;span class=&quot;z-comment z-line z-number-sign z-shell&quot;&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function z-shell&quot;&gt;&lt;span class=&quot;z-entity z-name z-function z-shell&quot;&gt;update_modules&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-parens z-begin z-shell&quot;&gt;(&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-parens z-end z-shell&quot;&gt;)&lt;&#x2F;span&gt; &lt;span class=&quot;z-punctuation z-section z-braces z-begin z-shell&quot;&gt;{&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function z-shell&quot;&gt;    &lt;span class=&quot;z-meta z-function-call z-shell&quot;&gt;&lt;span class=&quot;z-variable z-function z-shell&quot;&gt;sed&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt;&lt;span class=&quot;z-variable z-parameter z-option z-shell&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-parameter z-shell&quot;&gt; -&lt;&#x2F;span&gt;i&lt;&#x2F;span&gt; &lt;span class=&quot;z-string z-quoted z-single z-shell&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-string z-begin z-shell&quot;&gt;&amp;#39;&lt;&#x2F;span&gt;s&#x2F;https:\&#x2F;\&#x2F;github.com\&#x2F;&#x2F;git@github.com:&#x2F;&lt;span class=&quot;z-punctuation z-definition z-string z-end z-shell&quot;&gt;&amp;#39;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt; .gitmodules&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function z-shell&quot;&gt;    &lt;span class=&quot;z-meta z-function-call z-shell&quot;&gt;&lt;span class=&quot;z-variable z-function z-shell&quot;&gt;git&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt; submodule sync&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function z-shell&quot;&gt;    &lt;span class=&quot;z-meta z-function-call z-shell&quot;&gt;&lt;span class=&quot;z-variable z-function z-shell&quot;&gt;git&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt; submodule update&lt;span class=&quot;z-variable z-parameter z-option z-shell&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-parameter z-shell&quot;&gt; --&lt;&#x2F;span&gt;init&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function z-shell&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-braces z-end z-shell&quot;&gt;}&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-comment z-line z-number-sign z-shell&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-comment z-begin z-shell&quot;&gt;#&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-comment z-line z-number-sign z-shell&quot;&gt; Function to process each level&lt;&#x2F;span&gt;&lt;span class=&quot;z-comment z-line z-number-sign z-shell&quot;&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function z-shell&quot;&gt;&lt;span class=&quot;z-entity z-name z-function z-shell&quot;&gt;process_level&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-parens z-begin z-shell&quot;&gt;(&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-parens z-end z-shell&quot;&gt;)&lt;&#x2F;span&gt; &lt;span class=&quot;z-punctuation z-section z-braces z-begin z-shell&quot;&gt;{&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function z-shell&quot;&gt;    &lt;span class=&quot;z-comment z-line z-number-sign z-shell&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-comment z-begin z-shell&quot;&gt;#&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-comment z-line z-number-sign z-shell&quot;&gt; 1. Update current .gitmodules&lt;&#x2F;span&gt;&lt;span class=&quot;z-comment z-line z-number-sign z-shell&quot;&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function z-shell&quot;&gt;    &lt;span class=&quot;z-meta z-function-call z-shell&quot;&gt;&lt;span class=&quot;z-variable z-function z-shell&quot;&gt;update_modules&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function z-shell&quot;&gt;    
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function z-shell&quot;&gt;    &lt;span class=&quot;z-comment z-line z-number-sign z-shell&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-comment z-begin z-shell&quot;&gt;#&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-comment z-line z-number-sign z-shell&quot;&gt; 2. For each currently cloned submodule&lt;&#x2F;span&gt;&lt;span class=&quot;z-comment z-line z-number-sign z-shell&quot;&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function z-shell&quot;&gt;    &lt;span class=&quot;z-meta z-function-call z-shell&quot;&gt;&lt;span class=&quot;z-variable z-function z-shell&quot;&gt;git&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt; submodule foreach &lt;span class=&quot;z-string z-quoted z-single z-shell&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-string z-begin z-shell&quot;&gt;&amp;#39;&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function z-shell&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt;&lt;span class=&quot;z-string z-quoted z-single z-shell&quot;&gt;        # 3. Update their .gitmodules if exists
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function z-shell&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt;&lt;span class=&quot;z-string z-quoted z-single z-shell&quot;&gt;        if [ -f &amp;quot;.gitmodules&amp;quot; ]; then
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function z-shell&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt;&lt;span class=&quot;z-string z-quoted z-single z-shell&quot;&gt;            sed -i &amp;quot;s&#x2F;https:\&#x2F;\&#x2F;github.com\&#x2F;&#x2F;git@github.com:&#x2F;&amp;quot; .gitmodules
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function z-shell&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt;&lt;span class=&quot;z-string z-quoted z-single z-shell&quot;&gt;            # 4. Update their immediate submodules
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function z-shell&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt;&lt;span class=&quot;z-string z-quoted z-single z-shell&quot;&gt;            git submodule sync
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function z-shell&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt;&lt;span class=&quot;z-string z-quoted z-single z-shell&quot;&gt;            git submodule update --init
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function z-shell&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt;&lt;span class=&quot;z-string z-quoted z-single z-shell&quot;&gt;        fi
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function z-shell&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt;&lt;span class=&quot;z-string z-quoted z-single z-shell&quot;&gt;    &lt;span class=&quot;z-punctuation z-definition z-string z-end z-shell&quot;&gt;&amp;#39;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function z-shell&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-braces z-end z-shell&quot;&gt;}&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-comment z-line z-number-sign z-shell&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-comment z-begin z-shell&quot;&gt;#&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-comment z-line z-number-sign z-shell&quot;&gt; 5. Repeat multiple times to ensure all nested levels are processed&lt;&#x2F;span&gt;&lt;span class=&quot;z-comment z-line z-number-sign z-shell&quot;&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-keyword z-control z-loop z-for z-shell&quot;&gt;for&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-group z-for z-shell&quot;&gt; i &lt;span class=&quot;z-keyword z-control z-in z-shell&quot;&gt;in&lt;&#x2F;span&gt; &lt;span class=&quot;z-meta z-group z-expansion z-brace z-shell&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-expansion z-brace z-begin z-shell&quot;&gt;{&lt;&#x2F;span&gt;1..5&lt;span class=&quot;z-punctuation z-section z-expansion z-brace z-end z-shell&quot;&gt;}&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-keyword z-operator z-logical z-continue z-shell&quot;&gt;;&lt;&#x2F;span&gt; &lt;span class=&quot;z-keyword z-control z-loop z-do z-shell&quot;&gt;do&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;    &lt;span class=&quot;z-meta z-function-call z-shell&quot;&gt;&lt;span class=&quot;z-support z-function z-echo z-shell&quot;&gt;echo&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt; &lt;span class=&quot;z-string z-quoted z-double z-shell&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-string z-begin z-shell&quot;&gt;&amp;quot;&lt;&#x2F;span&gt;Processing level &lt;span class=&quot;z-meta z-group z-expansion z-parameter z-shell&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-variable z-shell&quot;&gt;$&lt;&#x2F;span&gt;&lt;span class=&quot;z-variable z-other z-readwrite z-shell&quot;&gt;i&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-definition z-string z-end z-shell&quot;&gt;&amp;quot;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;    &lt;span class=&quot;z-meta z-function-call z-shell&quot;&gt;&lt;span class=&quot;z-variable z-function z-shell&quot;&gt;process_level&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-keyword z-control z-loop z-end z-shell&quot;&gt;done&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
+&lt;h3 id=&quot;huggingface&quot;&gt;Huggingface&lt;&#x2F;h3&gt;
+&lt;p&gt;HF mirror: &lt;code&gt;export HF_ENDPOINT=https:&#x2F;&#x2F;hf-mirror.com&lt;&#x2F;code&gt;&lt;&#x2F;p&gt;
+&lt;p&gt;Mindscope: &lt;code&gt;https:&#x2F;&#x2F;www.modelscope.cn&#x2F;home&lt;&#x2F;code&gt;&lt;&#x2F;p&gt;
+</content>
+        <summary type="html">Quickly setting up new single-board computers like Raspberry Pi.</summary>
+        </entry>
+</feed>
