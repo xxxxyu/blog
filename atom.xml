@@ -1,0 +1,993 @@
+<?xml version="1.0" encoding="utf-8"?>
+<?xml-stylesheet href="https://xxxxyu.github.io/blog/feed_style.xsl" type="text/xsl"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xml:lang="en">
+    <tabi:metadata xmlns:tabi="https://github.com/welpo/tabi">
+        <tabi:base_url>https:&#x2F;&#x2F;xxxxyu.github.io&#x2F;blog&#x2F;</tabi:base_url>
+        <tabi:separator>
+            •
+        </tabi:separator>
+        <tabi:about_feeds>This is a web feed, also known as an Atom feed. Subscribe by copying the URL from the address bar into your newsreader. Visit About Feeds to learn more and get started. It&#x27;s free.</tabi:about_feeds>
+        <tabi:visit_the_site>Visit website</tabi:visit_the_site>
+        <tabi:recent_posts>Recent posts</tabi:recent_posts>
+        <tabi:last_updated_on>Updated on $DATE</tabi:last_updated_on>
+        <tabi:default_theme></tabi:default_theme>
+        <tabi:post_listing_date>date</tabi:post_listing_date>
+        <tabi:current_section>Xyu&#x27;s Blog</tabi:current_section>
+    </tabi:metadata><title>Xyu's Blog</title>
+        <subtitle>Blog space for Xyu</subtitle>
+    <link href="https://xxxxyu.github.io/blog/atom.xml" rel="self" type="application/atom+xml"/>
+    <link href="https://xxxxyu.github.io/blog" rel="alternate" type="text/html"/>
+    <generator uri="https://www.getzola.org/">Zola</generator><updated>2025-10-28T00:00:00+00:00</updated><id>https://xxxxyu.github.io/blog/atom.xml</id><entry xml:lang="en">
+        <title>Enhancing GPTQv2 Format Support in vLLM: Analysis and Implementation</title>
+        <published>2025-10-12T00:00:00+00:00</published>
+        <updated>2025-10-28T00:00:00+00:00</updated>
+        <author>
+            <name>Xiangyu Li</name>
+        </author>
+        <link rel="alternate" href="https://xxxxyu.github.io/blog/posts/vllm-gptqv2-support/" type="text/html"/>
+        <id>https://xxxxyu.github.io/blog/posts/vllm-gptqv2-support/</id>
+        
+            <content type="html">&lt;blockquote&gt;
+&lt;p&gt;Issue (closed): &lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;vllm-project&#x2F;vllm&#x2F;issues&#x2F;26343&quot;&gt;#26343&lt;&#x2F;a&gt; &lt;br &#x2F;&gt;
+Pull request (merged): &lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;vllm-project&#x2F;vllm&#x2F;pull&#x2F;26092&quot;&gt;#26092&lt;&#x2F;a&gt; &lt;br &#x2F;&gt;
+Commit: &lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;vllm-project&#x2F;vllm&#x2F;commit&#x2F;5cc6bddb6ef5e8e5c10de8122a43fd6e8c1e3b4b&quot;&gt;&lt;code&gt;5cc6bdd&lt;&#x2F;code&gt;&lt;&#x2F;a&gt;&lt;&#x2F;p&gt;
+&lt;&#x2F;blockquote&gt;
+&lt;h2 id=&quot;introduction&quot;&gt;Introduction&lt;&#x2F;h2&gt;
+&lt;p&gt;vLLM, one of the leading LLM inference frameworks, currently lacks robust support for &lt;strong&gt;GPTQv2 format&lt;&#x2F;strong&gt; (an upgraded version of GPTQv1 format) models, particularly those using &lt;strong&gt;low-bit (2&#x2F;3-bit) or asymmetric quantization&lt;&#x2F;strong&gt;. While vLLM doesn’t raise explicit errors when loading such models, it incorrectly treats them as GPTQv1 format, resulting in degraded inference quality and characteristic gibberish outputs (consisting of repeated &lt;code&gt;!!!&lt;&#x2F;code&gt;, details in &lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;vllm-project&#x2F;vllm&#x2F;issues&#x2F;26343&quot;&gt;this issue&lt;&#x2F;a&gt;).&lt;&#x2F;p&gt;
+&lt;p&gt;This limitation stems from differences in &lt;strong&gt;zero point handling&lt;&#x2F;strong&gt; between GPTQv1 and GPTQv2 checkpoint formats, which vLLM’s existing GPTQ GeMM kernels don’t account for. This post presents a comprehensive analysis of this limitation, and documents the implementation of kernel adaptations (i.e., in &lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;vllm-project&#x2F;vllm&#x2F;pull&#x2F;26092&quot;&gt;this PR&lt;&#x2F;a&gt;), that enable proper GPTQv2 support while maintaining backward compatibility.&lt;&#x2F;p&gt;
+&lt;p&gt;Through careful investigation of vLLM’s quantization support and targeted CUDA kernel modifications, I enable robust inference for GPTQv2 format models, especially low-bit or asymmetric ones, with vLLM — contributing a step forward towards efficient LLM deployment.&lt;&#x2F;p&gt;
+&lt;h2 id=&quot;background-and-preliminaries&quot;&gt;Background and Preliminaries&lt;&#x2F;h2&gt;
+&lt;p&gt;In my case, I use vLLM to serve some low-bit (e.g., 2-bit), asymmetrically quantized models, stored in GPTQv2 format, and encountered &lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;vllm-project&#x2F;vllm&#x2F;issues&#x2F;26343&quot;&gt;this issue&lt;&#x2F;a&gt;.&lt;&#x2F;p&gt;
+&lt;p&gt;Before diving into technical details, I’ll briefly introduce the background to do so (e.g., why GPTQv2), and some preliminaries (e.g., the checkpoint format) to help follow the technical parts. &lt;strong&gt;Key takeaways:&lt;&#x2F;strong&gt;&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Asymmetric quantization benefits low-bit quantization&lt;&#x2F;strong&gt;, by adjusting the zero point for each group of weights.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;GPTQv2 format outperforms GPTQv1 in asymmetric quantization&lt;&#x2F;strong&gt;, by better preserving zero point information.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h3 id=&quot;weight-quantization-of-llms&quot;&gt;Weight Quantization of LLMs&lt;&#x2F;h3&gt;
+&lt;p&gt;Weight quantization that quantizes high-precision model weights (e.g., 16&#x2F;32-bit) into fewer bits (e.g., 2&#x2F;3&#x2F;4&#x2F;8-bit) has been a common practice in LLM deployment, especially in resource-constrained scenarios.&lt;&#x2F;p&gt;
+&lt;p&gt;Technically, weight quantization maps the large range of high-precision weights (e.g., within $[-65504, 65504]$ for FP16) into a limited range of quantized weights (e.g., $[0, 2^b - 1]$ for $b$-bit unsigned integer).
+This mapping typically involves a scaling factor ($scale$) that compresses the range, and a bias ($zero$) that shifts the zero point. We denote $w_o$ as the original weight within the range $[w_{min}, w_{max}]$ (usually for a group of weights), and $w_q$ as the quantized weight. Then, a simple $b$-bit integer quantization is formulated as:&lt;&#x2F;p&gt;
+&lt;p&gt;\[
+scale = \frac{w_{max} - w_{min}}{2^b - 1}
+\]&lt;&#x2F;p&gt;
+&lt;p&gt;\[
+zero = - \mathrm{round}(\frac{w_{min}}{scale})
+\]&lt;&#x2F;p&gt;
+&lt;p&gt;\[
+w_q = \mathrm{clamp}(\mathrm{round}(\frac{w_o}{scale}) + zero)
+\]&lt;&#x2F;p&gt;
+&lt;p&gt;To recover the original weight $\hat{w}_o$ during dequantization:&lt;&#x2F;p&gt;
+&lt;p&gt;\[
+\hat{w}_o = (w_q - zero) \cdot scale
+\]&lt;&#x2F;p&gt;
+&lt;p&gt;Based on this formulation, quantization methods are categorized by whether the zero point is required:&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;em&gt;Symmetric quantization&lt;&#x2F;em&gt; assumes $w_{max} = - w_{min}$, so $zero = - \mathrm{round}(\frac{2^b - 1}{2})$ will not change. In this case, $zero$ doesn’t provide additional information given the quantization bits.&lt;&#x2F;p&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;em&gt;Asymmetric quantization&lt;&#x2F;em&gt; doesn’t have such assumption. So $zero$ varies across groups of weights, and is necessary for accurately recovering the original weights.&lt;&#x2F;p&gt;
+&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;p&gt;Note that most GPTQ implementations are 4-bit symmetric quantization. However, to reduce the quantization error in lower bits, asymmetric quantization is necessary.&lt;&#x2F;p&gt;
+&lt;h3 id=&quot;gptq-quantization-and-checkpoint-format&quot;&gt;GPTQ: Quantization and Checkpoint Format&lt;&#x2F;h3&gt;
+&lt;p&gt;GPTQ&lt;sup class=&quot;footnote-reference&quot; id=&quot;fr-1-1&quot;&gt;&lt;a href=&quot;#fn-1&quot;&gt;[1]&lt;&#x2F;a&gt;&lt;&#x2F;sup&gt; is one of the most popular post-training &lt;strong&gt;quantization methods&lt;&#x2F;strong&gt; for generative transformers (mainly LLMs and VLMs).
+It utilizes approximate second-order information (inverse layer Hessian) to reduce quantization errors.
+Besides, GPTQ could also refer to the specific &lt;strong&gt;checkpoint format&lt;&#x2F;strong&gt; adopted by GPTQ-quantized models (e.g., by &lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;AutoGPTQ&#x2F;AutoGPTQ&quot;&gt;AutoGPTQ&lt;&#x2F;a&gt;), with details explained in &lt;a href=&quot;https:&#x2F;&#x2F;danieldk.eu&#x2F;GPTQ-Checkpoint-Format&quot;&gt;this blog&lt;&#x2F;a&gt;.&lt;&#x2F;p&gt;
+&lt;p&gt;GPTQ is widely supported by the community, including 1) quantization libraries that implement the GPTQ quantization method or support exporting to GPTQ format (although not implementing the quantization method), and 2) kernel libraries and inference frameworks that support inference with models of the GPTQ checkpoint format, as listed below:&lt;&#x2F;p&gt;
+&lt;p&gt;Quantization libraries:&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;ModelCloud&#x2F;GPTQModel&quot;&gt;GPTQModel&lt;&#x2F;a&gt; is now the 1st choice for GPTQ quantization in replacement of AutoGPTQ, with richer model and backend support.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;AutoGPTQ&#x2F;AutoGPTQ&quot;&gt;AutoGPTQ&lt;&#x2F;a&gt; was the most popular library for GPTQ quantization, and is unmaintained now.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;IST-DASLab&#x2F;gptq&quot;&gt;gptq&lt;&#x2F;a&gt; is the official code implementation of the GPTQ paper.&lt;&#x2F;li&gt;
+&lt;li&gt;Many other libraries implement GPTQ quantization, or support to save quantized models in GPTQ format.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;p&gt;Computing (CUDA) kernels:&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;IST-DASLab&#x2F;marlin&quot;&gt;Marlin&lt;&#x2F;a&gt; is the SOTA W4A16 mpGeMM kernel supporting 4-bit GPTQ models.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;turboderp-org&#x2F;exllamav2&quot;&gt;ExLlamaV2&lt;&#x2F;a&gt; is an inference library with high-performance kernels for GPTQ models.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;microsoft&#x2F;BitBLAS&quot;&gt;BitBLAS&lt;&#x2F;a&gt; is a high-performance low-bit mpGeMM kernel library supporting GPTQ models.&lt;&#x2F;li&gt;
+&lt;li&gt;Similarly, many other kernel libraries support GPTQ format models.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;p&gt;SOTA LLM inference frameworks, including &lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;vllm-project&#x2F;vllm&quot;&gt;vLLM&lt;&#x2F;a&gt;, are integrated with the above quantization and kernel libraries, to support efficient LLM deployment with GPTQ quantization.&lt;&#x2F;p&gt;
+&lt;h3 id=&quot;from-gptqv1-to-gptqv2&quot;&gt;From GPTQv1 to GPTQv2&lt;&#x2F;h3&gt;
+&lt;p&gt;GPTQv2 is an upgraded version of GPTQ (by a different team though), in both the quantization method and checkpoint format. Specifically:&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;Quantization method: GPTQv2 (also called GPTAQ) introduces asymmetric calibration, which effectively reduces the quantization error accumulated in previous layers&lt;sup class=&quot;footnote-reference&quot; id=&quot;fr-2-1&quot;&gt;&lt;a href=&quot;#fn-2&quot;&gt;[2]&lt;&#x2F;a&gt;&lt;&#x2F;sup&gt;. It’s first implemented in &lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;Intelligent-Computing-Lab-Panda&#x2F;GPTAQ&quot;&gt;GPTAQ&lt;&#x2F;a&gt;, and then integrated to &lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;ModelCloud&#x2F;GPTQModel&quot;&gt;GPTQModel&lt;&#x2F;a&gt; (enabled by setting &lt;code&gt;v2=True&lt;&#x2F;code&gt;).&lt;&#x2F;li&gt;
+&lt;li&gt;Checkpoint format: GPTQv2 format stores the zero points differently with GPTQv1 (i.e., GPTQ) format — GPTQv1 stores $\mathrm{clamp}(zero - 1)$ in the checkpoint, and requires adding $1$ back before dequantization at runtime&lt;sup class=&quot;footnote-reference&quot; id=&quot;fr-3-1&quot;&gt;&lt;a href=&quot;#fn-3&quot;&gt;[3]&lt;&#x2F;a&gt;&lt;&#x2F;sup&gt;. GPTQv2 stores the exact $zero$ value, and doesn’t require extra runtime adjustment. It is also supported by &lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;ModelCloud&#x2F;GPTQModel&quot;&gt;GPTQModel&lt;&#x2F;a&gt; (enabled by setting &lt;code&gt;format=&quot;gptq_v2&quot;&lt;&#x2F;code&gt;).&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;p&gt;Just like GPTQv1, the quantization method and checkpoint format are not coupled. So you can:&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;Store a non-GPTQ-quantized model in GPTQv2 format, like &lt;a href=&quot;https:&#x2F;&#x2F;huggingface.co&#x2F;BitDistiller&#x2F;Qwen-8B-w2g64-gptq&quot;&gt;BitDistiller&#x2F;Qwen-8B-w2g64-gptq&lt;&#x2F;a&gt;.&lt;&#x2F;li&gt;
+&lt;li&gt;Store a GPTQv1-quantized model in GPTQv2 format, by setting &lt;code&gt;format=&quot;gptq_v2&quot;&lt;&#x2F;code&gt; only, in GPTQModel.&lt;&#x2F;li&gt;
+&lt;li&gt;Store a GPTQv2-quantized model in GPTQv1 format, by setting &lt;code&gt;v2=True&lt;&#x2F;code&gt; only, in GPTQModel.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;p&gt;Note that the conversion between GPTQv2 and GPTQv1 format is &lt;strong&gt;irreversible&lt;&#x2F;strong&gt; — you can convert GPTQv1 to GPTQv2 losslessly, but not from GPTQv2 to GPTQv1. This is due to the “-1” issue of GPTQv1 as mentioned above. In this way, the actual zero point range in suppressed by clamping $0 - 1$ to $0$ in GPTQv1. For example, in INT2 quantization, the effective range shrinks from $[0,3]$ to $[1,3]$.
+Therefore, &lt;strong&gt;GPTQv2 format is a preferable choice in asymmetric quantization, especially for low-bit quantization.&lt;&#x2F;strong&gt;&lt;&#x2F;p&gt;
+&lt;h2 id=&quot;cause-analysis&quot;&gt;Cause Analysis&lt;&#x2F;h2&gt;
+&lt;p&gt;After all the preparation, we can finally dive into the technical details about why and how vLLM fails for GPTQv2 in my case — even though it has some sort of support actually, which I found after careful investigation. &lt;strong&gt;Key takeaways:&lt;&#x2F;strong&gt;&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;vLLM has several GPTQ-compatible GeMM kernels with pre-defined priorities&lt;&#x2F;strong&gt; — Marlin, BitBLAS, and fallbacks.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Performant kernels like Marlin support GPTQv2 format of limited bits and symmetry&lt;&#x2F;strong&gt; — only 4&#x2F;8-bit symmetric quantization.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Fallback kernels support more bits and symmetry but lacks GPTQv2 format support&lt;&#x2F;strong&gt; — the reason why I encountered the issue.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;!-- markdownlint-disable MD046 --&gt;
+
+
+&lt;noscript&gt;
+    &lt;strong&gt;⚠️ JavaScript is required to render the diagram.&lt;&#x2F;strong&gt;
+&lt;&#x2F;noscript&gt;
+&lt;pre class=&quot;mermaid&quot;&gt;
+    graph TD
+    A[VllmConfig] --&gt; B[ModelConfig._verify_quantization]
+
+    B --&gt; |&quot;Priority: gptq_marlin &gt; gptq_bitblas &gt; gptq&quot;| E[QuantizationConfig.get_quant_method]
+    
+    E --&gt;|4&#x2F;8-bit + sym| J[GPTQMarlinLinearMethod]
+    E --&gt;|4&#x2F;8-bit + sym| K[GPTQBitBLASLinearMethod]
+    E --&gt;|2&#x2F;3&#x2F;4&#x2F;8-bit + sym&#x2F;asym| L[GPTQLinearMethod]
+    
+    J --&gt; JJ[MarlinLinearKernel]
+    K --&gt; KK[BitBLASLinearKernel]
+    L --&gt; LL[Direct Kernel Call]
+    
+    JJ --&gt; M[gptq_marlin_gemm&lt;br&#x2F;&gt;CUDA kernel]
+    KK --&gt; N[bitblas.Matmul&lt;br&#x2F;&gt;External library]
+    LL --&gt; O[gptq_gemm&lt;br&#x2F;&gt;CUDA kernel]
+    
+    M --&gt; Q[&quot;✅ Marlin: gptq&#x2F;gptq_v2&quot;]
+    N --&gt; R[&quot;✅ BitBLAS: gptq&#x2F;gptq_v2&quot;] 
+    O --&gt; S[&quot;❌ GPTQ: gptq only&quot;]
+    
+    style J fill:#90EE90
+    style K fill:#90EE90
+    style L fill:#FFB6C1
+    style Q fill:#90EE90
+    style R fill:#90EE90
+    style S fill:#FFB6C1
+&lt;&#x2F;pre&gt;
+&lt;!-- markdownlint-enable MD046 --&gt;
+&lt;h3 id=&quot;vllm-s-kernel-routing-hierarchy&quot;&gt;vLLM’s Kernel Routing Hierarchy&lt;&#x2F;h3&gt;
+&lt;p&gt;The first step is to understand how vLLM routes computing kernels for different quantizations, like GPTQ. This is implemented in the model execution part of the &lt;a href=&quot;https:&#x2F;&#x2F;docs.vllm.ai&#x2F;en&#x2F;stable&#x2F;design&#x2F;arch_overview.html#llm-engine&quot;&gt;LLMEngine&lt;&#x2F;a&gt;. For simplicity, we only consider dense models (no MoE). It includes the following calling hierarchy:&lt;&#x2F;p&gt;
+&lt;p&gt;&lt;strong&gt;1. Model-level quantization configuration:&lt;&#x2F;strong&gt;&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;In model implementations (&lt;code&gt;vllm&#x2F;model_executor&#x2F;models&lt;&#x2F;code&gt;), &lt;code&gt;vllm_config: VllmConfig&lt;&#x2F;code&gt; is passed to the model at initialization, which contains &lt;code&gt;quant_config: QuantizationConfig&lt;&#x2F;code&gt;.
+&lt;ul&gt;
+&lt;li&gt;Each quantization extends &lt;code&gt;QuantizationConfig&lt;&#x2F;code&gt; with quantization-specific overrides (e.g., &lt;code&gt;GPTQConfig&lt;&#x2F;code&gt;). See &lt;a href=&quot;https:&#x2F;&#x2F;docs.vllm.ai&#x2F;en&#x2F;stable&#x2F;api&#x2F;vllm&#x2F;model_executor&#x2F;layers&#x2F;quantization&#x2F;index.html&quot;&gt;all quantizations&lt;&#x2F;a&gt;.&lt;&#x2F;li&gt;
+&lt;li&gt;If no quantization is specified in &lt;code&gt;quant_config&lt;&#x2F;code&gt;, &lt;code&gt;ModelConfig._verify_quantization&lt;&#x2F;code&gt; will select one from a priority list (see &lt;a href=&quot;https:&#x2F;&#x2F;xxxxyu.github.io&#x2F;blog&#x2F;posts&#x2F;vllm-gptqv2-support&#x2F;#vllm-gptq-support-notes&quot;&gt;below&lt;&#x2F;a&gt;).&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;Each linear module of this model is initialized with &lt;code&gt;quant_config&lt;&#x2F;code&gt;.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;p&gt;&lt;strong&gt;2. Layer-level quantization configuration (linear methods):&lt;&#x2F;strong&gt;&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;At initialization, each quantized linear module determines &lt;code&gt;quant_method = quant_config.get_quant_method&lt;&#x2F;code&gt;.
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;get_quant_method&lt;&#x2F;code&gt; returns a specific linear method class (inherited from &lt;code&gt;LinearMethodBase&lt;&#x2F;code&gt;, e.g., &lt;code&gt;GPTQLinearMethod&lt;&#x2F;code&gt;) depending on the quantization configuration.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;Each linear module calls the computing kernel by overriding &lt;code&gt;LinearMethodBase.apply&lt;&#x2F;code&gt; (e.g., &lt;code&gt;GPTQLinearMethod.apply&lt;&#x2F;code&gt; calls &lt;code&gt;gptq_gemm&lt;&#x2F;code&gt;).&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;p&gt;&lt;strong&gt;3. (Optional) Kernel selection (linear kernels):&lt;&#x2F;strong&gt;&lt;&#x2F;p&gt;
+&lt;p&gt;vLLM supports several ways of routing to low-level CUDA kernels from a linear method class:&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;Direct calling. For example, &lt;code&gt;GPTQLinearMethod&lt;&#x2F;code&gt; directly routes to &lt;code&gt;gptq_gemm&lt;&#x2F;code&gt;, a registered custom operand of vLLM (implemented in &lt;code&gt;csrc&#x2F;quantization&#x2F;gptq&lt;&#x2F;code&gt;).&lt;&#x2F;li&gt;
+&lt;li&gt;Indirect calling. When multiple kernels are available for a linear method, or a kernel is available for multiple linear methods, vLLM supports extending the &lt;code&gt;MPLinearKernel&lt;&#x2F;code&gt; class as an interface for routing to this kernel (in &lt;code&gt;vllm&#x2F;model_executor&#x2F;layers&#x2F;quantization&#x2F;kernels&#x2F;mixed_precision&lt;&#x2F;code&gt;). For example, &lt;code&gt;GPTQBitBLASLinearMethod&lt;&#x2F;code&gt; routes to &lt;code&gt;BitBLASLinearKernel&lt;&#x2F;code&gt;, and &lt;code&gt;GPTQMarlinLinearMethod&lt;&#x2F;code&gt; calls &lt;code&gt;choose_mp_linear_kernel&lt;&#x2F;code&gt; for flexible routing.&lt;&#x2F;li&gt;
+&lt;li&gt;External calling (orthogonal to the above). vLLM supports calling kernels from external libraries. For example, &lt;code&gt;BitBLASLinearKernel&lt;&#x2F;code&gt; calls &lt;code&gt;Matmul&lt;&#x2F;code&gt; from the &lt;code&gt;bitblas&lt;&#x2F;code&gt; Python library.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h3 id=&quot;vllm-s-support-for-gptq-v2-format&quot;&gt;vLLM’s Support for GPTQ(v2) Format&lt;&#x2F;h3&gt;
+&lt;p&gt;vLLM integrates several optimized kernels for GPTQ format models, as listed in &lt;a href=&quot;https:&#x2F;&#x2F;xxxxyu.github.io&#x2F;blog&#x2F;posts&#x2F;vllm-gptqv2-support&#x2F;#gptq-quantization-and-checkpoint-format&quot;&gt;GPTQ: Quantization and Checkpoint Format&lt;&#x2F;a&gt;, including Marlin, ExLlamaV2, BitBLAS, etc. vLLM also has fallback kernels for unsupported quantization configurations of these kernels. Following the analysis in &lt;a href=&quot;https:&#x2F;&#x2F;xxxxyu.github.io&#x2F;blog&#x2F;posts&#x2F;vllm-gptqv2-support&#x2F;#vllm-s-kernel-routing-hierarchy&quot;&gt;vLLM’s Kernel Routing Hierarchy&lt;&#x2F;a&gt;, I summarize this support matrix (by linear methods):&lt;&#x2F;p&gt;
+&lt;table&gt;&lt;thead&gt;&lt;tr&gt;&lt;th&gt;Method&lt;&#x2F;th&gt;&lt;th&gt;Bits&lt;&#x2F;th&gt;&lt;th&gt;Sym&lt;&#x2F;th&gt;&lt;th&gt;GPTQ Format&lt;&#x2F;th&gt;&lt;&#x2F;tr&gt;&lt;&#x2F;thead&gt;&lt;tbody&gt;
+&lt;tr&gt;&lt;td&gt;GPTQMarlin&lt;&#x2F;td&gt;&lt;td&gt;4,8&lt;&#x2F;td&gt;&lt;td&gt;True&lt;&#x2F;td&gt;&lt;td&gt;&lt;code&gt;gptq, gptq_v2&lt;&#x2F;code&gt;&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;GPTQBitBLAS&lt;&#x2F;td&gt;&lt;td&gt;4,8&lt;&#x2F;td&gt;&lt;td&gt;True&lt;&#x2F;td&gt;&lt;td&gt;&lt;code&gt;gptq, gptq_v2&lt;&#x2F;code&gt;&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;tr&gt;&lt;td&gt;GPTQ&lt;&#x2F;td&gt;&lt;td&gt;2,3,4,8&lt;&#x2F;td&gt;&lt;td&gt;Any&lt;&#x2F;td&gt;&lt;td&gt;&lt;code&gt;gptq&lt;&#x2F;code&gt;&lt;&#x2F;td&gt;&lt;&#x2F;tr&gt;
+&lt;&#x2F;tbody&gt;&lt;&#x2F;table&gt;
+&lt;p&gt;&lt;a id=&quot;vllm-gptq-support-notes&quot;&gt;&lt;&#x2F;a&gt;&lt;&#x2F;p&gt;
+&lt;p&gt;Notes:&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;All methods support 4&#x2F;8-bit symmetric quantization. vLLM selects the most performant method supported by the current configuration, according to predefined priorities of quantization overrides (in &lt;code&gt;ModelConfig._verify_quantization&lt;&#x2F;code&gt;):&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;pre data-lang=&quot;py&quot; class=&quot;language-py z-code&quot;&gt;&lt;code class=&quot;language-py&quot; data-lang=&quot;py&quot;&gt;&lt;span class=&quot;z-source z-python&quot;&gt;&lt;span class=&quot;z-meta z-qualified-name z-python&quot;&gt;&lt;span class=&quot;z-meta z-generic-name z-python&quot;&gt;overrides&lt;&#x2F;span&gt;&lt;&#x2F;span&gt; &lt;span class=&quot;z-keyword z-operator z-assignment z-python&quot;&gt;=&lt;&#x2F;span&gt; &lt;span class=&quot;z-meta z-sequence z-list z-python&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-sequence z-begin z-python&quot;&gt;[&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-python&quot;&gt;&lt;span class=&quot;z-meta z-sequence z-list z-python&quot;&gt;                &lt;span class=&quot;z-constant z-language z-python&quot;&gt;...&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-python&quot;&gt;&lt;span class=&quot;z-meta z-sequence z-list z-python&quot;&gt;                &lt;span class=&quot;z-comment z-line z-number-sign z-python&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-comment z-python&quot;&gt;#&lt;&#x2F;span&gt; gptq_marlin_24 requires special format,
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-python&quot;&gt;&lt;span class=&quot;z-meta z-sequence z-list z-python&quot;&gt;                &lt;span class=&quot;z-comment z-line z-number-sign z-python&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-comment z-python&quot;&gt;#&lt;&#x2F;span&gt; so we don&amp;#39;t consider here.
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-python&quot;&gt;&lt;span class=&quot;z-meta z-sequence z-list z-python&quot;&gt;                &lt;span class=&quot;z-meta z-string z-python&quot;&gt;&lt;span class=&quot;z-string z-quoted z-double z-python&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-string z-begin z-python&quot;&gt;&amp;quot;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-string z-python&quot;&gt;&lt;span class=&quot;z-string z-quoted z-double z-python&quot;&gt;gptq_marlin_24&lt;span class=&quot;z-punctuation z-definition z-string z-end z-python&quot;&gt;&amp;quot;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-separator z-sequence z-python&quot;&gt;,&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-python&quot;&gt;&lt;span class=&quot;z-meta z-sequence z-list z-python&quot;&gt;                &lt;span class=&quot;z-comment z-line z-number-sign z-python&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-comment z-python&quot;&gt;#&lt;&#x2F;span&gt; Priority: gptq_marlin &amp;gt; gptq_bitblas &amp;gt; gptq.
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-python&quot;&gt;&lt;span class=&quot;z-meta z-sequence z-list z-python&quot;&gt;                &lt;span class=&quot;z-meta z-string z-python&quot;&gt;&lt;span class=&quot;z-string z-quoted z-double z-python&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-string z-begin z-python&quot;&gt;&amp;quot;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-string z-python&quot;&gt;&lt;span class=&quot;z-string z-quoted z-double z-python&quot;&gt;gptq_marlin&lt;span class=&quot;z-punctuation z-definition z-string z-end z-python&quot;&gt;&amp;quot;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-separator z-sequence z-python&quot;&gt;,&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-python&quot;&gt;&lt;span class=&quot;z-meta z-sequence z-list z-python&quot;&gt;                &lt;span class=&quot;z-meta z-string z-python&quot;&gt;&lt;span class=&quot;z-string z-quoted z-double z-python&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-string z-begin z-python&quot;&gt;&amp;quot;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-string z-python&quot;&gt;&lt;span class=&quot;z-string z-quoted z-double z-python&quot;&gt;gptq_bitblas&lt;span class=&quot;z-punctuation z-definition z-string z-end z-python&quot;&gt;&amp;quot;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-separator z-sequence z-python&quot;&gt;,&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-python&quot;&gt;&lt;span class=&quot;z-meta z-sequence z-list z-python&quot;&gt;                &lt;span class=&quot;z-constant z-language z-python&quot;&gt;...&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-python&quot;&gt;&lt;span class=&quot;z-meta z-sequence z-list z-python&quot;&gt;            &lt;span class=&quot;z-punctuation z-section z-sequence z-end z-python&quot;&gt;]&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
+&lt;ul&gt;
+&lt;li&gt;Only &lt;code&gt;GPTQLinearMethod&lt;&#x2F;code&gt; supports 2&#x2F;3-bit quantization and asymmetric quantization. However, it lacks GPTQv2 support (both the other two supports).&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;p&gt;As a result, neither 2&#x2F;3-bit nor asymmetric quantization in GPTQv2 format are unsupported by vLLM, which motivates &lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;vllm-project&#x2F;vllm&#x2F;pull&#x2F;26092&quot;&gt;this PR&lt;&#x2F;a&gt;.&lt;&#x2F;p&gt;
+&lt;h2 id=&quot;solution&quot;&gt;Solution&lt;&#x2F;h2&gt;
+&lt;p&gt;Based on the above analysis, vLLM’s GPTQ linear methods lack support for 2&#x2F;3-bit quantization and asymmetric quantization in GPTQv2 format, and require adaption to robustly support GPTQv2 format models of various configurations.&lt;&#x2F;p&gt;
+&lt;h3 id=&quot;approach-adapt-gptq-linear-method-kernel&quot;&gt;Approach: Adapt GPTQ Linear Method &amp;amp; Kernel&lt;&#x2F;h3&gt;
+&lt;p&gt;To add such support, at least one linear method should be added&#x2F;adapted. To adapt existing linear methods:&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;GPTQMarlinLinearMethod&lt;&#x2F;code&gt; (lacking 2&#x2F;3-bit and asymmetric support): It requires also modifying vLLM’s Marlin CUDA kernel, which is dedicated for 4&#x2F;8-bit symmetric quantization — not a good choice.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;code&gt;GPTQBitBLASLinearMethod&lt;&#x2F;code&gt; (lacking 2&#x2F;3-bit and asymmetric support): It requires modifying only the linear method&#x2F;kernel (Python code), since the &lt;code&gt;bitblas&lt;&#x2F;code&gt; library itself supports the &lt;code&gt;bits&lt;&#x2F;code&gt; and &lt;code&gt;sym&lt;&#x2F;code&gt; we want — a reasonable choice, but requires the optional &lt;code&gt;bitblas&lt;&#x2F;code&gt; package to be installed.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;code&gt;GPTQLinearMethod&lt;&#x2F;code&gt; (lacking GPTQv2 format support): It requires also modifying vLLM’s &lt;code&gt;gptq_gemm&lt;&#x2F;code&gt; CUDA kernel, by only adapting the zero point handling logic — preferred.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;p&gt;So, the plan is to adapt &lt;code&gt;GPTQLinearMethod&lt;&#x2F;code&gt; (with &lt;code&gt;GPTQConfig&lt;&#x2F;code&gt;) and &lt;code&gt;gptq_gemm&lt;&#x2F;code&gt; to add proper GPTQv2 format support.&lt;&#x2F;p&gt;
+&lt;h3 id=&quot;details-of-adaption-conditioned-on-format&quot;&gt;Details of Adaption: Conditioned on Format&lt;&#x2F;h3&gt;
+&lt;p&gt;During this linear method &amp;amp; kernel adaption, there are 3 points to keep in mind:&lt;&#x2F;p&gt;
+&lt;ol&gt;
+&lt;li&gt;Maintain compatibility for GPTQv1 format.&lt;&#x2F;li&gt;
+&lt;li&gt;Keep the code and binary size impact down.&lt;&#x2F;li&gt;
+&lt;li&gt;Make sure other kernels (e.g., Marlin) are not running with GPTQv2 incorrectly.&lt;&#x2F;li&gt;
+&lt;&#x2F;ol&gt;
+&lt;p&gt;In response to Pt. 1 and 2:&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;Add a &lt;code&gt;use_v2_format: bool&lt;&#x2F;code&gt; attribute to &lt;code&gt;GPTQLinearMethod&lt;&#x2F;code&gt; that indicates whether &lt;code&gt;checkpoint_format == &quot;gptq_v2&quot;&lt;&#x2F;code&gt;.&lt;&#x2F;li&gt;
+&lt;li&gt;Add a &lt;code&gt;bool use_v2_format&lt;&#x2F;code&gt; argument to &lt;code&gt;gptq_gemm&lt;&#x2F;code&gt;, which accepts &lt;code&gt;GPTQLinearMethod.use_v2_format&lt;&#x2F;code&gt; as input.&lt;&#x2F;li&gt;
+&lt;li&gt;In &lt;code&gt;gptq_gemm&lt;&#x2F;code&gt;, update the zero point handling logic to be conditioned on &lt;code&gt;use_v2_format&lt;&#x2F;code&gt;. For example:&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;pre data-lang=&quot;c&quot; class=&quot;language-c z-code&quot;&gt;&lt;code class=&quot;language-c&quot; data-lang=&quot;c&quot;&gt;&lt;span class=&quot;z-source z-c&quot;&gt;&lt;span class=&quot;z-comment z-line z-double-slash z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-comment z-c&quot;&gt;&#x2F;&#x2F;&lt;&#x2F;span&gt; In `reconstruct_exllama_2bit_kernel`:
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-c&quot;&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-c&quot;&gt;&lt;span class=&quot;z-comment z-line z-double-slash z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-comment z-c&quot;&gt;&#x2F;&#x2F;&lt;&#x2F;span&gt; Previous: zeros[i] + 1 (hardcoded for GPTQv1)
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-c&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-c&quot;&gt;&lt;span class=&quot;z-variable z-function z-c&quot;&gt;dequant_2bit_16&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-group z-begin z-c&quot;&gt;(&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-c&quot;&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;load_int4&lt;span class=&quot;z-punctuation z-accessor z-c&quot;&gt;.&lt;&#x2F;span&gt;&lt;span class=&quot;z-variable z-other z-member z-c&quot;&gt;x&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; dq&lt;span class=&quot;z-meta z-brackets z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-begin z-c&quot;&gt;[&lt;&#x2F;span&gt;&lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-c&quot;&gt;0&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-end z-c&quot;&gt;]&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; size_n&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; zeros&lt;span class=&quot;z-meta z-brackets z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-begin z-c&quot;&gt;[&lt;&#x2F;span&gt;&lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-c&quot;&gt;0&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-end z-c&quot;&gt;]&lt;&#x2F;span&gt;&lt;&#x2F;span&gt; &lt;span class=&quot;z-keyword z-operator z-arithmetic z-c&quot;&gt;+&lt;&#x2F;span&gt; &lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-c&quot;&gt;1&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-group z-end z-c&quot;&gt;)&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-terminator z-c&quot;&gt;;&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-c&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-c&quot;&gt;&lt;span class=&quot;z-variable z-function z-c&quot;&gt;dequant_2bit_16&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-group z-begin z-c&quot;&gt;(&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-c&quot;&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;load_int4&lt;span class=&quot;z-punctuation z-accessor z-c&quot;&gt;.&lt;&#x2F;span&gt;&lt;span class=&quot;z-variable z-other z-member z-c&quot;&gt;y&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; dq&lt;span class=&quot;z-meta z-brackets z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-begin z-c&quot;&gt;[&lt;&#x2F;span&gt;&lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-c&quot;&gt;1&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-end z-c&quot;&gt;]&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; size_n&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; zeros&lt;span class=&quot;z-meta z-brackets z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-begin z-c&quot;&gt;[&lt;&#x2F;span&gt;&lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-c&quot;&gt;1&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-end z-c&quot;&gt;]&lt;&#x2F;span&gt;&lt;&#x2F;span&gt; &lt;span class=&quot;z-keyword z-operator z-arithmetic z-c&quot;&gt;+&lt;&#x2F;span&gt; &lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-c&quot;&gt;1&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-group z-end z-c&quot;&gt;)&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-terminator z-c&quot;&gt;;&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-c&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-c&quot;&gt;&lt;span class=&quot;z-variable z-function z-c&quot;&gt;dequant_2bit_16&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-group z-begin z-c&quot;&gt;(&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-c&quot;&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;load_int4&lt;span class=&quot;z-punctuation z-accessor z-c&quot;&gt;.&lt;&#x2F;span&gt;&lt;span class=&quot;z-variable z-other z-member z-c&quot;&gt;z&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; dq&lt;span class=&quot;z-meta z-brackets z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-begin z-c&quot;&gt;[&lt;&#x2F;span&gt;&lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-c&quot;&gt;2&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-end z-c&quot;&gt;]&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; size_n&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; zeros&lt;span class=&quot;z-meta z-brackets z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-begin z-c&quot;&gt;[&lt;&#x2F;span&gt;&lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-c&quot;&gt;2&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-end z-c&quot;&gt;]&lt;&#x2F;span&gt;&lt;&#x2F;span&gt; &lt;span class=&quot;z-keyword z-operator z-arithmetic z-c&quot;&gt;+&lt;&#x2F;span&gt; &lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-c&quot;&gt;1&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-group z-end z-c&quot;&gt;)&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-terminator z-c&quot;&gt;;&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-c&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-c&quot;&gt;&lt;span class=&quot;z-variable z-function z-c&quot;&gt;dequant_2bit_16&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-group z-begin z-c&quot;&gt;(&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-c&quot;&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;load_int4&lt;span class=&quot;z-punctuation z-accessor z-c&quot;&gt;.&lt;&#x2F;span&gt;&lt;span class=&quot;z-variable z-other z-member z-c&quot;&gt;w&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; dq&lt;span class=&quot;z-meta z-brackets z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-begin z-c&quot;&gt;[&lt;&#x2F;span&gt;&lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-c&quot;&gt;3&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-end z-c&quot;&gt;]&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; size_n&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; zeros&lt;span class=&quot;z-meta z-brackets z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-begin z-c&quot;&gt;[&lt;&#x2F;span&gt;&lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-c&quot;&gt;3&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-end z-c&quot;&gt;]&lt;&#x2F;span&gt;&lt;&#x2F;span&gt; &lt;span class=&quot;z-keyword z-operator z-arithmetic z-c&quot;&gt;+&lt;&#x2F;span&gt; &lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-c&quot;&gt;1&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-group z-end z-c&quot;&gt;)&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-terminator z-c&quot;&gt;;&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-c&quot;&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-c&quot;&gt;&lt;span class=&quot;z-comment z-line z-double-slash z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-comment z-c&quot;&gt;&#x2F;&#x2F;&lt;&#x2F;span&gt; Now: zeros[i] + offset (conditioned on `use_v2_format`)
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-c&quot;&gt;&lt;span class=&quot;z-storage z-type z-c&quot;&gt;int&lt;&#x2F;span&gt; zero_offset &lt;span class=&quot;z-keyword z-operator z-assignment z-c&quot;&gt;=&lt;&#x2F;span&gt; use_v2_format &lt;span class=&quot;z-keyword z-operator z-ternary z-c&quot;&gt;?&lt;&#x2F;span&gt; &lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-c&quot;&gt;0&lt;&#x2F;span&gt; &lt;span class=&quot;z-keyword z-operator z-ternary z-c&quot;&gt;:&lt;&#x2F;span&gt; &lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-c&quot;&gt;1&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-terminator z-c&quot;&gt;;&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-c&quot;&gt;&lt;span class=&quot;z-keyword z-operator z-variadic z-c&quot;&gt;...&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-c&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-c&quot;&gt;&lt;span class=&quot;z-variable z-function z-c&quot;&gt;dequant_2bit_16&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-group z-begin z-c&quot;&gt;(&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-c&quot;&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;load_int4&lt;span class=&quot;z-punctuation z-accessor z-c&quot;&gt;.&lt;&#x2F;span&gt;&lt;span class=&quot;z-variable z-other z-member z-c&quot;&gt;x&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; dq&lt;span class=&quot;z-meta z-brackets z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-begin z-c&quot;&gt;[&lt;&#x2F;span&gt;&lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-c&quot;&gt;0&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-end z-c&quot;&gt;]&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; size_n&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; zeros&lt;span class=&quot;z-meta z-brackets z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-begin z-c&quot;&gt;[&lt;&#x2F;span&gt;&lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-c&quot;&gt;0&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-end z-c&quot;&gt;]&lt;&#x2F;span&gt;&lt;&#x2F;span&gt; &lt;span class=&quot;z-keyword z-operator z-arithmetic z-c&quot;&gt;+&lt;&#x2F;span&gt; zero_offset&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-group z-end z-c&quot;&gt;)&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-terminator z-c&quot;&gt;;&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-c&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-c&quot;&gt;&lt;span class=&quot;z-variable z-function z-c&quot;&gt;dequant_2bit_16&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-group z-begin z-c&quot;&gt;(&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-c&quot;&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;load_int4&lt;span class=&quot;z-punctuation z-accessor z-c&quot;&gt;.&lt;&#x2F;span&gt;&lt;span class=&quot;z-variable z-other z-member z-c&quot;&gt;y&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; dq&lt;span class=&quot;z-meta z-brackets z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-begin z-c&quot;&gt;[&lt;&#x2F;span&gt;&lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-c&quot;&gt;1&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-end z-c&quot;&gt;]&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; size_n&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; zeros&lt;span class=&quot;z-meta z-brackets z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-begin z-c&quot;&gt;[&lt;&#x2F;span&gt;&lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-c&quot;&gt;1&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-end z-c&quot;&gt;]&lt;&#x2F;span&gt;&lt;&#x2F;span&gt; &lt;span class=&quot;z-keyword z-operator z-arithmetic z-c&quot;&gt;+&lt;&#x2F;span&gt; zero_offset&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-group z-end z-c&quot;&gt;)&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-terminator z-c&quot;&gt;;&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-c&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-c&quot;&gt;&lt;span class=&quot;z-variable z-function z-c&quot;&gt;dequant_2bit_16&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-group z-begin z-c&quot;&gt;(&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-c&quot;&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;load_int4&lt;span class=&quot;z-punctuation z-accessor z-c&quot;&gt;.&lt;&#x2F;span&gt;&lt;span class=&quot;z-variable z-other z-member z-c&quot;&gt;z&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; dq&lt;span class=&quot;z-meta z-brackets z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-begin z-c&quot;&gt;[&lt;&#x2F;span&gt;&lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-c&quot;&gt;2&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-end z-c&quot;&gt;]&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; size_n&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; zeros&lt;span class=&quot;z-meta z-brackets z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-begin z-c&quot;&gt;[&lt;&#x2F;span&gt;&lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-c&quot;&gt;2&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-end z-c&quot;&gt;]&lt;&#x2F;span&gt;&lt;&#x2F;span&gt; &lt;span class=&quot;z-keyword z-operator z-arithmetic z-c&quot;&gt;+&lt;&#x2F;span&gt; zero_offset&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-group z-end z-c&quot;&gt;)&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-terminator z-c&quot;&gt;;&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-c&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-c&quot;&gt;&lt;span class=&quot;z-variable z-function z-c&quot;&gt;dequant_2bit_16&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-group z-begin z-c&quot;&gt;(&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-c&quot;&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;load_int4&lt;span class=&quot;z-punctuation z-accessor z-c&quot;&gt;.&lt;&#x2F;span&gt;&lt;span class=&quot;z-variable z-other z-member z-c&quot;&gt;w&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; dq&lt;span class=&quot;z-meta z-brackets z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-begin z-c&quot;&gt;[&lt;&#x2F;span&gt;&lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-c&quot;&gt;3&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-end z-c&quot;&gt;]&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; size_n&lt;span class=&quot;z-punctuation z-separator z-c&quot;&gt;,&lt;&#x2F;span&gt; zeros&lt;span class=&quot;z-meta z-brackets z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-begin z-c&quot;&gt;[&lt;&#x2F;span&gt;&lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-c&quot;&gt;3&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-brackets z-end z-c&quot;&gt;]&lt;&#x2F;span&gt;&lt;&#x2F;span&gt; &lt;span class=&quot;z-keyword z-operator z-arithmetic z-c&quot;&gt;+&lt;&#x2F;span&gt; zero_offset&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-group z-c&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-group z-end z-c&quot;&gt;)&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-terminator z-c&quot;&gt;;&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-c&quot;&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
+&lt;blockquote&gt;
+&lt;p&gt;When testing, I found that the original &lt;code&gt;gptq_gemm&lt;&#x2F;code&gt; is buggy at 4-bit even with symmetrically quantized model of GPTQv1 format — out of scope of this PR.&lt;&#x2F;p&gt;
+&lt;&#x2F;blockquote&gt;
+&lt;p&gt;To ensure Pt. 3, review &lt;a href=&quot;https:&#x2F;&#x2F;xxxxyu.github.io&#x2F;blog&#x2F;posts&#x2F;vllm-gptqv2-support&#x2F;#vllm-s-support-for-gptq-v2-format&quot;&gt;vLLM’s Support for GPTQ(v2) Format&lt;&#x2F;a&gt; — both &lt;code&gt;GPTQMarlinLinearMethod&lt;&#x2F;code&gt; and &lt;code&gt;GPTQBitBLASLinearMethod&lt;&#x2F;code&gt; are not affected, as they already support GPTQv2 format, though limited to 4&#x2F;8-bit symmetric quantization.&lt;&#x2F;p&gt;
+&lt;blockquote&gt;
+&lt;p&gt;TODO: Add some performance benchmarks.
+Currently I’ve found that 2-bit gptq_gemm is slower during decoding (GeMV) than prefilling (GeMM).&lt;&#x2F;p&gt;
+&lt;&#x2F;blockquote&gt;
+&lt;h2 id=&quot;conclusion&quot;&gt;Conclusion&lt;&#x2F;h2&gt;
+&lt;p&gt;This post details the development of GPTQv2 format support in vLLM, which addresses a significant gap in low-bit asymmetric quantization inference with SOTA LLM inference frameworks.&lt;&#x2F;p&gt;
+&lt;p&gt;Questions and discussions are welcomed.&lt;&#x2F;p&gt;
+&lt;p&gt;&lt;strong&gt;Possible future works:&lt;&#x2F;strong&gt;&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;Extend optimized kernels (Marlin, BitBLAS) to support 2&#x2F;3-bit or asymmetric quantization.&lt;&#x2F;li&gt;
+&lt;li&gt;Fix the 4-bit bug in &lt;code&gt;gptq_gemm&lt;&#x2F;code&gt;.&lt;&#x2F;li&gt;
+&lt;li&gt;Improve the decoding speed with &lt;code&gt;gptq_gemm&lt;&#x2F;code&gt;.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;hr&gt;&lt;ol class=&quot;footnotes-list&quot;&gt;
+&lt;li id=&quot;fn-1&quot;&gt;
+&lt;p&gt;Frantar, Elias, et al. “GPTQ: Accurate Post-Training Quantization for Generative Pre-Trained Transformers.” arXiv preprint arXiv:2210.17323 (2022). &lt;a href=&quot;#fr-1-1&quot;&gt;↩&lt;&#x2F;a&gt;&lt;&#x2F;p&gt;
+&lt;&#x2F;li&gt;
+&lt;li id=&quot;fn-2&quot;&gt;
+&lt;p&gt;Li, Yuhang, et al. “GPTAQ: Efficient Finetuning-Free Quantization for Asymmetric Calibration.” arXiv preprint arXiv:2504.02692 (2025). &lt;a href=&quot;#fr-2-1&quot;&gt;↩&lt;&#x2F;a&gt;&lt;&#x2F;p&gt;
+&lt;&#x2F;li&gt;
+&lt;li id=&quot;fn-3&quot;&gt;
+&lt;p&gt;de Kok, Daniël. “GPTQ Checkpoint Format.” Daniël’s Website, 7 Aug. 2024, danieldk.eu&#x2F;GPTQ-Checkpoint-Format. &lt;a href=&quot;#fr-3-1&quot;&gt;↩&lt;&#x2F;a&gt;&lt;&#x2F;p&gt;
+&lt;&#x2F;li&gt;
+&lt;&#x2F;ol&gt;
+</content>
+        <summary type="html">Deep technical analysis of GPTQv2 format limitations in vLLM, and implementation of CUDA kernel adaptations to enable efficient low-bit&#x2F;asymmetric quantization inference.</summary>
+        </entry><entry xml:lang="en">
+        <title>Vision-Language-Action (VLA) Models: A Review of Recent Progress</title>
+        <published>2025-09-16T00:00:00+00:00</published>
+        <updated>2025-09-16T00:00:00+00:00</updated>
+        <author>
+            <name>Xiangyu Li</name>
+        </author>
+        <link rel="alternate" href="https://xxxxyu.github.io/blog/posts/vla-models-review/" type="text/html"/>
+        <id>https://xxxxyu.github.io/blog/posts/vla-models-review/</id>
+        
+            <content type="html">&lt;blockquote&gt;
+&lt;p&gt;I am new to this field — feel free to discuss, and welcome to bring up any questions!
+This is adapted from my slides, available at: &lt;a href=&quot;https:&#x2F;&#x2F;xxxxyu.github.io&#x2F;blog&#x2F;posts&#x2F;vla-models-review&#x2F;resources&#x2F;vla_review_0911.pdf&quot;&gt;[PDF]&lt;&#x2F;a&gt;.&lt;&#x2F;p&gt;
+&lt;&#x2F;blockquote&gt;
+&lt;h2 id=&quot;background-and-concepts&quot;&gt;Background and Concepts&lt;&#x2F;h2&gt;
+&lt;!-- ### The Evolution of Embodied AI --&gt;
+&lt;h3 id=&quot;the-concept-of-vision-language-action-vla-models&quot;&gt;The Concept of Vision-Language-Action (VLA) Models&lt;&#x2F;h3&gt;
+&lt;p&gt;According to my understanding, &lt;em&gt;Vision-Language-Action (VLA)&lt;&#x2F;em&gt; Models are multi-modal foundation models for embodied AI, which ingest &lt;strong&gt;vision&lt;&#x2F;strong&gt; (e.g., observations in video streams) and &lt;strong&gt;language&lt;&#x2F;strong&gt; (e.g., user instructions) as inputs, and generate low-level robot &lt;strong&gt;actions&lt;&#x2F;strong&gt; (i.e., the &lt;em&gt;control policy&lt;&#x2F;em&gt;) as outputs.
+Mechanically, a VLA utilizes a &lt;em&gt;VLM (Vision-Language Model)&lt;&#x2F;em&gt; for &lt;em&gt;VL-conditioned action generation&lt;&#x2F;em&gt;.&lt;&#x2F;p&gt;
+&lt;img class=&quot;dimmable-image&quot; src=&quot;https:&amp;#x2F;&amp;#x2F;xxxxyu.github.io&amp;#x2F;blog&amp;#x2F;img&amp;#x2F;vla-models-review&amp;#x2F;timeline.png?h=402c8c050567a03dd024&quot; loading=&quot;lazy&quot; alt=&quot;The concepts and timelines related to the development of VLA.&quot; width=&quot;1732&quot; height=&quot;404&quot; &#x2F;&gt;&lt;h3 id=&quot;add-vlm-based-task-planners-for-long-horizon-tasks&quot;&gt;Add VLM-Based Task Planners for Long-Horizon Tasks&lt;&#x2F;h3&gt;
+&lt;p&gt;VLAs are initially optimized for the low-level robot control policy, which is insufficient for completing complex and long-horizon tasks without end-to-end training.
+An effective approach is to add an LLM&#x2F;VLM-based &lt;em&gt;task planner&lt;&#x2F;em&gt; to decompose a long-horizon task into simple subtasks, so that the VLA could complete them one by one.
+While earlier works usually adopt a separate model as the task planner, recent works are utilizing a shared VLM backbone for both task planning and control policy within the same model (i.e., the &lt;em&gt;dual-system&lt;&#x2F;em&gt; design).&lt;&#x2F;p&gt;
+&lt;img class=&quot;dimmable-image&quot; src=&quot;https:&amp;#x2F;&amp;#x2F;xxxxyu.github.io&amp;#x2F;blog&amp;#x2F;img&amp;#x2F;vla-models-review&amp;#x2F;hierarchical_policy.png?h=0b6037ee70219e197e7e&quot; loading=&quot;lazy&quot; alt=&quot;An example of a hierarchical robot policy (high-level planning + low-level control).&quot; width=&quot;1672&quot; height=&quot;404&quot; &#x2F;&gt;&lt;h2 id=&quot;recent-progress-of-vla&quot;&gt;Recent Progress of VLA&lt;&#x2F;h2&gt;
+&lt;p&gt;I summarize the trend of recent VLA as evolving &lt;strong&gt;from &lt;em&gt;system-1-only&lt;&#x2F;em&gt; (control) to &lt;em&gt;dual-system&lt;&#x2F;em&gt; (planning + control), and from &lt;em&gt;discrete&lt;&#x2F;em&gt; action to &lt;em&gt;continuous&lt;&#x2F;em&gt; action.&lt;&#x2F;strong&gt; I divide recent progress of VLA into 4 quadrants:&lt;&#x2F;p&gt;
+&lt;img class=&quot;invertible-image&quot; src=&quot;https:&amp;#x2F;&amp;#x2F;xxxxyu.github.io&amp;#x2F;blog&amp;#x2F;img&amp;#x2F;vla-models-review&amp;#x2F;quadrants.png?h=ff98285742f0d10adf07&quot; loading=&quot;lazy&quot; alt=&quot;The quandrants of recent VLAs.&quot; width=&quot;1890&quot; height=&quot;754&quot; &#x2F;&gt;
+&lt;p&gt;In the following of this section, I’ll introduce these categories respectively.&lt;&#x2F;p&gt;
+&lt;h3 id=&quot;discrete-vla&quot;&gt;Discrete VLA&lt;&#x2F;h3&gt;
+&lt;p&gt;&lt;em&gt;Discrete VLA&lt;&#x2F;em&gt; generates &lt;em&gt;discrete action tokens&lt;&#x2F;em&gt;. Specifically, it adopts &lt;em&gt;discrete action tokenization&lt;&#x2F;em&gt; that maps low-level robot actions to discrete tokens, and trains the VLM to generate such tokens &lt;em&gt;autoregressively&lt;&#x2F;em&gt;, just like generating text tokens.
+This provides a straightforward approach to align the two modalities, action and language, which simplifies the training based on autoregressive VLMs (i.e., from next token prediction to next action prediction).
+However, it suffers from high latency and low FPS in robot control, since the autoregressive generation paradigm needs to go through the entire VLA for each forward pass.&lt;&#x2F;p&gt;
+&lt;p&gt;Some representative methods:&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;RT-2&lt;&#x2F;strong&gt;&lt;sup class=&quot;footnote-reference&quot; id=&quot;fr-2-1&quot;&gt;&lt;a href=&quot;#fn-2&quot;&gt;[1]&lt;&#x2F;a&gt;&lt;&#x2F;sup&gt; (ViT + PALI-X&#x2F;PALM-E): a pioneer work that proposes and popularizes the term “VLA”.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;OpenVLA&lt;&#x2F;strong&gt;&lt;sup class=&quot;footnote-reference&quot; id=&quot;fr-3-1&quot;&gt;&lt;a href=&quot;#fn-3&quot;&gt;[2]&lt;&#x2F;a&gt;&lt;&#x2F;sup&gt; (DinoV2 &amp;amp; SigLIP + Llama2 7B): an influential open-source VLA model (3.8k stars on &lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;openvla&#x2F;openvla&quot;&gt;GitHub&lt;&#x2F;a&gt;).&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;FAST&lt;&#x2F;strong&gt;&lt;sup class=&quot;footnote-reference&quot; id=&quot;fr-4-1&quot;&gt;&lt;a href=&quot;#fn-4&quot;&gt;[3]&lt;&#x2F;a&gt;&lt;&#x2F;sup&gt;: an action tokenizer that compresses action sequences with DCT (Discrete Cosine Transform).&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;img class=&quot;dimmable-image&quot; src=&quot;https:&amp;#x2F;&amp;#x2F;xxxxyu.github.io&amp;#x2F;blog&amp;#x2F;img&amp;#x2F;vla-models-review&amp;#x2F;openvla.png?h=166905ad3eb3f8cf9378&quot; loading=&quot;lazy&quot; alt=&quot;Overview of OpenVLA.&quot; width=&quot;1072&quot; height=&quot;400&quot; &#x2F;&gt;&lt;h3 id=&quot;continuous-vla&quot;&gt;Continuous VLA&lt;&#x2F;h3&gt;
+&lt;p&gt;&lt;em&gt;Continuous VLA&lt;&#x2F;em&gt; samples from a &lt;em&gt;continuous action space&lt;&#x2F;em&gt;, which allows smoother control with higher precision, but also increases the difficulty of training atop existing language models.
+To solve this, Physical Intelligence first proposes to integrate a &lt;em&gt;flow-matching (a variant of diffusion) action expert&lt;&#x2F;em&gt; to a pre-trained VLM, and trains $\pi_0$&lt;sup class=&quot;footnote-reference&quot; id=&quot;fr-5-1&quot;&gt;&lt;a href=&quot;#fn-5&quot;&gt;[4]&lt;&#x2F;a&gt;&lt;&#x2F;sup&gt; atop a pre-trained PaliGemma 2B VLM.&lt;&#x2F;p&gt;
+&lt;p&gt;The insight is to 1) utilize the VLM pre-trained on &lt;em&gt;internet-scale&lt;&#x2F;em&gt; datasets for &lt;strong&gt;semantic understanding and generalization&lt;&#x2F;strong&gt;, and 2) utilize the flow-matching action expert trained on &lt;em&gt;cross-embodiment&lt;&#x2F;em&gt; datasets for &lt;strong&gt;high-frequency (up to 50Hz) control policy&lt;&#x2F;strong&gt;. It also allows optional post-training fine-tuning for difficult or unseen tasks.&lt;&#x2F;p&gt;
+&lt;img class=&quot;dimmable-image&quot; src=&quot;https:&amp;#x2F;&amp;#x2F;xxxxyu.github.io&amp;#x2F;blog&amp;#x2F;img&amp;#x2F;vla-models-review&amp;#x2F;pi0.png?h=bbf36e0647c609c73a63&quot; loading=&quot;lazy&quot; alt=&quot;Overview of $\pi_0$.&quot; width=&quot;1384&quot; height=&quot;402&quot; &#x2F;&gt;
+&lt;p&gt;Similarly, NVIDIA Isaac trains GR00T N1(.5)&lt;sup class=&quot;footnote-reference&quot; id=&quot;fr-6-1&quot;&gt;&lt;a href=&quot;#fn-6&quot;&gt;[5]&lt;&#x2F;a&gt;&lt;&#x2F;sup&gt; that combines an pre-trained Eagle-2 VLM and an diffusion-based action head, which is the first foundation model for generalist humanoid robots. In both $\pi_0$ and GR00T, the VLM backbone and action expert communicates through attention modules, so that the generated actions are conditioned on the hidden states (i.e., KV) of the VLM. Still, there are two technical differences:&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Attention mechanism&lt;&#x2F;strong&gt;: $\pi_0$ concatenates the VL and action KV and conducts masked self-attention (a &lt;a href=&quot;https:&#x2F;&#x2F;huggingface.co&#x2F;blog&#x2F;pi0&quot;&gt;blog&lt;&#x2F;a&gt; illustrates this clearly); GR00T directly conducts cross-attention between the two parts.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Number of VLM layers involved&lt;&#x2F;strong&gt;: $\pi_0$ aligns the number of layers in the action expert to the VLM backbone, and conducts self-attention in each layer (MoE-like); GR00T only keeps the hidden states of the last layer in the VLM&lt;sup class=&quot;footnote-reference&quot; id=&quot;fr-7-1&quot;&gt;&lt;a href=&quot;#fn-7&quot;&gt;[6]&lt;&#x2F;a&gt;&lt;&#x2F;sup&gt;, and conducts cross-attention with it for each layer.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h3 id=&quot;dual-system-vla&quot;&gt;Dual-System VLA&lt;&#x2F;h3&gt;
+&lt;p&gt;Different from earlier works that use a separate LLM&#x2F;VLM as the task planner (i.e., system-1-only VLA), &lt;em&gt;dual-system VLA&lt;&#x2F;em&gt; utilize the VLM backbone in VLA as the task planner, so the system 2 (high-level planning) and system 1 (low-level control policy) &lt;strong&gt;shares one VLM&lt;&#x2F;strong&gt;.
+This further enhances open-world generalization of the VLA, by learning to &lt;strong&gt;predict subtasks from user instructions by itself&lt;&#x2F;strong&gt;.
+Besides, it reduces the resource requirements compared to using a separate task planner model.&lt;&#x2F;p&gt;
+&lt;blockquote&gt;
+&lt;p&gt;Question: does it also help improve model performance, as the system 1 and 2 are better aligned? On the other hand, does this cause potential interference between different objectives?&lt;&#x2F;p&gt;
+&lt;&#x2F;blockquote&gt;
+&lt;img class=&quot;dimmable-image&quot; src=&quot;https:&amp;#x2F;&amp;#x2F;xxxxyu.github.io&amp;#x2F;blog&amp;#x2F;img&amp;#x2F;vla-models-review&amp;#x2F;pi05.png?h=8888c95b1059aed475be&quot; loading=&quot;lazy&quot; alt=&quot;Overview of $\pi_{0.5}$.&quot; width=&quot;1480&quot; height=&quot;600&quot; &#x2F;&gt;
+&lt;p&gt;$\pi_{0.5}$&lt;sup class=&quot;footnote-reference&quot; id=&quot;fr-8-1&quot;&gt;&lt;a href=&quot;#fn-8&quot;&gt;[7]&lt;&#x2F;a&gt;&lt;&#x2F;sup&gt; is the first of this category, trained by Physical Intelligence. Compared to $\pi_0$, it involves new training data, including object detection, instructions &amp;amp; subtask commands, discrete actions, etc.
+At inference time, it first predicts low-level command from high-level prompt with the VLM (system 2), then executes the low-level command with the VLM and action expert (system 1).
+This paradigm (training recipe and inference scheme) is followed by recent VLA like G0&lt;sup class=&quot;footnote-reference&quot; id=&quot;fr-9-1&quot;&gt;&lt;a href=&quot;#fn-9&quot;&gt;[8]&lt;&#x2F;a&gt;&lt;&#x2F;sup&gt; by Galaxea and WALL-OSS&lt;sup class=&quot;footnote-reference&quot; id=&quot;fr-10-1&quot;&gt;&lt;a href=&quot;#fn-10&quot;&gt;[9]&lt;&#x2F;a&gt;&lt;&#x2F;sup&gt; by X Square Robot.
+While most of these models are continuous VLA, WALL-OSS also includes a discrete version with FAST tokenization (&lt;a href=&quot;https:&#x2F;&#x2F;huggingface.co&#x2F;x-square-robot&#x2F;wall-oss-fast&quot;&gt;WALL-OSS-FAST&lt;&#x2F;a&gt;).&lt;&#x2F;p&gt;
+&lt;p&gt;Their repositories and open-source states:&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;$\pi_{0.5}$: Weights opened. Code partially opened at &lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;Physical-Intelligence&#x2F;openpi&quot;&gt;Physical-Intelligence&#x2F;openpi&lt;&#x2F;a&gt;. Inference code for the VLM subtask prediction is not opened.&lt;&#x2F;li&gt;
+&lt;li&gt;G0: Weights and open-world dataset opened. Code partially opened at &lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;OpenGalaxea&#x2F;G0&quot;&gt;OpenGalaxea&#x2F;G0&lt;&#x2F;a&gt;. Currently only support real-robot inference.&lt;&#x2F;li&gt;
+&lt;li&gt;WALL-OSS: Weights and code opened at &lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;X-Square-Robot&#x2F;wall-x&quot;&gt;X-Square-Robot&#x2F;wall-x&lt;&#x2F;a&gt;.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h2 id=&quot;summary-and-future-look&quot;&gt;Summary and Future Look&lt;&#x2F;h2&gt;
+&lt;p&gt;In the past 3 years (from RT-2 in 2023), VLA has rapidly evolved from discrete to continuous, and from single-system to dual-system.
+In the following years, I personally think &lt;em&gt;native multi-tasking&lt;&#x2F;em&gt; will be another trend of VLA (I will probably write another post) — embodied agents should be capable of performing multiple fundamentally different tasks (e.g., chat, memory, navigation) instead of restricted to “action”.
+As introduced above, recent models are already sharing the Internet-scale pre-trained VLM backbone for task planning and control policy (though still restricted to action tasks), which lays the foundation for more aggressive model sharing (one VLM backbone for multiple tasks) as a step forward in the future.&lt;&#x2F;p&gt;
+&lt;p&gt;I am currently working on building this &lt;em&gt;multi-expert foundation model&lt;&#x2F;em&gt; for native multi-tasking of embodied agents — feel free to contact for discussion and collaboration!&lt;&#x2F;p&gt;
+&lt;hr&gt;&lt;ol class=&quot;footnotes-list&quot;&gt;
+&lt;li id=&quot;fn-2&quot;&gt;
+&lt;p&gt;Zitkovich, Brianna, et al. “RT-2: Vision-Language-Action Models Transfer Web Knowledge to Robotic Control.” &lt;em&gt;Conference on Robot Learning&lt;&#x2F;em&gt;. PMLR, 2023. &lt;a href=&quot;#fr-2-1&quot;&gt;↩&lt;&#x2F;a&gt;&lt;&#x2F;p&gt;
+&lt;&#x2F;li&gt;
+&lt;li id=&quot;fn-3&quot;&gt;
+&lt;p&gt;Kim, Moo Jin, et al. “OpenVLA: An Open-Source Vision-Language-Action Model.” &lt;em&gt;arXiv preprint arXiv:2406.09246&lt;&#x2F;em&gt; (2024). &lt;a href=&quot;#fr-3-1&quot;&gt;↩&lt;&#x2F;a&gt;&lt;&#x2F;p&gt;
+&lt;&#x2F;li&gt;
+&lt;li id=&quot;fn-4&quot;&gt;
+&lt;p&gt;Pertsch, Karl, et al. “FAST: Efficient Action Tokenization for Vision-Language-Action Models.” &lt;em&gt;arXiv preprint arXiv:2501.09747&lt;&#x2F;em&gt; (2025). &lt;a href=&quot;#fr-4-1&quot;&gt;↩&lt;&#x2F;a&gt;&lt;&#x2F;p&gt;
+&lt;&#x2F;li&gt;
+&lt;li id=&quot;fn-5&quot;&gt;
+&lt;p&gt;Black, Kevin, et al. “$\pi_0$: A Vision-Language-Action Flow Model for General Robot Control.” &lt;em&gt;arXiv preprint arXiv:2410.24164&lt;&#x2F;em&gt; (2024). &lt;a href=&quot;#fr-5-1&quot;&gt;↩&lt;&#x2F;a&gt;&lt;&#x2F;p&gt;
+&lt;&#x2F;li&gt;
+&lt;li id=&quot;fn-6&quot;&gt;
+&lt;p&gt;Bjorck, Johan, et al. “GR00T N1: An Open Foundation Model for Generalist Humanoid Robots.” &lt;em&gt;arXiv preprint arXiv:2503.14734&lt;&#x2F;em&gt; (2025). &lt;a href=&quot;#fr-6-1&quot;&gt;↩&lt;&#x2F;a&gt;&lt;&#x2F;p&gt;
+&lt;&#x2F;li&gt;
+&lt;li id=&quot;fn-7&quot;&gt;
+&lt;p&gt;Specifically, the language backbone of the VLM in GR00T N1.5 is fine-tuned from the first 14 layers of the pre-trained &lt;a href=&quot;https:&#x2F;&#x2F;huggingface.co&#x2F;Qwen&#x2F;Qwen3-1.7B&quot;&gt;Qwen3-1.7B&lt;&#x2F;a&gt; (28 layers in total), according to my test of similarity between the weights. &lt;a href=&quot;#fr-7-1&quot;&gt;↩&lt;&#x2F;a&gt;&lt;&#x2F;p&gt;
+&lt;&#x2F;li&gt;
+&lt;li id=&quot;fn-8&quot;&gt;
+&lt;p&gt;Intelligence, Physical, et al. “$\pi_{0.5}$: a Vision-Language-Action Model with Open-World Generalization.” &lt;em&gt;arXiv preprint arXiv:2504.16054&lt;&#x2F;em&gt; (2025). &lt;a href=&quot;#fr-8-1&quot;&gt;↩&lt;&#x2F;a&gt;&lt;&#x2F;p&gt;
+&lt;&#x2F;li&gt;
+&lt;li id=&quot;fn-9&quot;&gt;
+&lt;p&gt;Jiang, Tao, et al. “Galaxea Open-World Dataset and G0 Dual-System VLA Model.” &lt;em&gt;arXiv preprint arXiv:2509.00576&lt;&#x2F;em&gt; (2025). &lt;a href=&quot;#fr-9-1&quot;&gt;↩&lt;&#x2F;a&gt;&lt;&#x2F;p&gt;
+&lt;&#x2F;li&gt;
+&lt;li id=&quot;fn-10&quot;&gt;
+&lt;p&gt;X Square Robot. “WALL-OSS: Igniting VLMs toward the Embodied Space.” 2025, &lt;a href=&quot;https:&#x2F;&#x2F;x2robot.cn-wlcb.ufileos.com&#x2F;wall_oss.pdf&quot;&gt;https:&#x2F;&#x2F;x2robot.cn-wlcb.ufileos.com&#x2F;wall_oss.pdf&lt;&#x2F;a&gt;. White paper. &lt;a href=&quot;#fr-10-1&quot;&gt;↩&lt;&#x2F;a&gt;&lt;&#x2F;p&gt;
+&lt;&#x2F;li&gt;
+&lt;&#x2F;ol&gt;
+</content>
+        <summary type="html">Recent VLAs evolve from discrete to continuous, and from single-system (system 1 only) to dual-system.</summary>
+        </entry><entry xml:lang="en">
+        <title>New Journey</title>
+        <published>2025-08-13T00:00:00+00:00</published>
+        <updated>2025-08-13T00:00:00+00:00</updated>
+        <author>
+            <name>Xiangyu Li</name>
+        </author>
+        <link rel="alternate" href="https://xxxxyu.github.io/blog/poems/new-journey/" type="text/html"/>
+        <id>https://xxxxyu.github.io/blog/poems/new-journey/</id>
+        
+            <content type="html">&lt;p&gt;Very well,&lt;&#x2F;p&gt;
+&lt;p&gt;a new journey begins&lt;&#x2F;p&gt;
+&lt;p&gt;officially.&lt;&#x2F;p&gt;
+&lt;span id=&quot;continue-reading&quot;&gt;&lt;&#x2F;span&gt;&lt;br&gt;
+&lt;p&gt;Into the fears&lt;&#x2F;p&gt;
+&lt;p&gt;that I’ve been dreaming&lt;&#x2F;p&gt;
+&lt;p&gt;long ago.&lt;&#x2F;p&gt;
+</content>
+        <summary type="html">Very well,
+a new journey begins
+officially.
+…</summary>
+        </entry><entry xml:lang="en">
+        <title>Happy SNR</title>
+        <published>2025-08-07T00:00:00+00:00</published>
+        <updated>2025-08-07T00:00:00+00:00</updated>
+        <author>
+            <name>Xiangyu Li</name>
+        </author>
+        <link rel="alternate" href="https://xxxxyu.github.io/blog/poems/happy-snr/" type="text/html"/>
+        <id>https://xxxxyu.github.io/blog/poems/happy-snr/</id>
+        
+            <content type="html">&lt;p&gt;I am&lt;&#x2F;p&gt;
+&lt;p&gt;a happy Signal-&lt;&#x2F;p&gt;
+&lt;p&gt;Noise Ratio&lt;&#x2F;p&gt;
+&lt;span id=&quot;continue-reading&quot;&gt;&lt;&#x2F;span&gt;
+&lt;p&gt;(SNR).&lt;&#x2F;p&gt;
+&lt;br&gt;
+&lt;p&gt;You are&lt;&#x2F;p&gt;
+&lt;p&gt;a filter&lt;&#x2F;p&gt;
+&lt;p&gt;up into the sky.&lt;&#x2F;p&gt;
+</content>
+        <summary type="html">I am
+a happy Signal-
+Noise Ratio
+…</summary>
+        </entry><entry xml:lang="en">
+        <title>Alcahola</title>
+        <published>2025-08-06T00:00:00+00:00</published>
+        <updated>2025-08-06T00:00:00+00:00</updated>
+        <author>
+            <name>Xiangyu Li</name>
+        </author>
+        <link rel="alternate" href="https://xxxxyu.github.io/blog/poems/alcahola/" type="text/html"/>
+        <id>https://xxxxyu.github.io/blog/poems/alcahola/</id>
+        
+            <content type="html">&lt;p&gt;Alcahola’s not Coca Cola&lt;&#x2F;p&gt;
+&lt;p&gt;and once you taste that&lt;&#x2F;p&gt;
+&lt;p&gt;will pull your whole out.&lt;&#x2F;p&gt;
+</content>
+        </entry><entry xml:lang="en">
+        <title>Reading Notes of Dario Amodei&#x27;s Blog</title>
+        <published>2025-08-02T00:00:00+00:00</published>
+        <updated>2025-08-04T00:00:00+00:00</updated>
+        <author>
+            <name>Xiangyu Li</name>
+        </author>
+        <link rel="alternate" href="https://xxxxyu.github.io/blog/posts/amodei-blog-reading-notes/" type="text/html"/>
+        <id>https://xxxxyu.github.io/blog/posts/amodei-blog-reading-notes/</id>
+        
+            <content type="html">&lt;blockquote&gt;
+&lt;p&gt;This is still in progress — but existing contents are already readable!&lt;&#x2F;p&gt;
+&lt;&#x2F;blockquote&gt;
+&lt;p&gt;Recently I’ve read some blog posts&lt;sup class=&quot;footnote-reference&quot; id=&quot;fr-1-1&quot;&gt;&lt;a href=&quot;#fn-1&quot;&gt;[1]&lt;&#x2F;a&gt;&lt;&#x2F;sup&gt; of &lt;a href=&quot;https:&#x2F;&#x2F;www.darioamodei.com&#x2F;&quot;&gt;Dario Amodei&lt;&#x2F;a&gt;, the CEO of &lt;a href=&quot;https:&#x2F;&#x2F;www.anthropic.com&#x2F;&quot;&gt;Anthropic&lt;&#x2F;a&gt;, and find them very insightful and inspiring to me — a Ph.D. candidate in AI-related fields, and also a deep user of Anthropic’s Claude models.&lt;&#x2F;p&gt;
+&lt;p&gt;Specifically, they broaden my view both academically and industrially, with an interdisciplinary perspective.
+So this is to write down the thoughts that came to me while reading, to not let them slip away.&lt;&#x2F;p&gt;
+&lt;p&gt;Amodei’s posts covered (in my reading order):&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;a href=&quot;https:&#x2F;&#x2F;www.darioamodei.com&#x2F;post&#x2F;on-deepseek-and-export-controls&quot;&gt;&lt;em&gt;On DeepSeek and Export Controls&lt;&#x2F;em&gt;&lt;&#x2F;a&gt; (Jan. 2025)&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;a href=&quot;https:&#x2F;&#x2F;www.darioamodei.com&#x2F;post&#x2F;the-urgency-of-interpretability&quot;&gt;&lt;em&gt;The Urgency of Interpretability&lt;&#x2F;em&gt;&lt;&#x2F;a&gt; (Apr. 2025)&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;a href=&quot;https:&#x2F;&#x2F;www.darioamodei.com&#x2F;essay&#x2F;machines-of-loving-grace&quot;&gt;&lt;em&gt;Machines of Loving Grace&lt;&#x2F;em&gt;&lt;&#x2F;a&gt; (Oct. 2024)&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h2 id=&quot;envisioning-powerful-ai&quot;&gt;Envisioning Powerful AI&lt;&#x2F;h2&gt;
+&lt;p&gt;In &lt;a href=&quot;https:&#x2F;&#x2F;www.darioamodei.com&#x2F;essay&#x2F;machines-of-loving-grace&quot;&gt;&lt;em&gt;Machines of Loving Grace&lt;&#x2F;em&gt;&lt;&#x2F;a&gt;, Amodei discusses a lot about what would &lt;em&gt;“powerful AI”&lt;&#x2F;em&gt; (he uses this phrase as he dislike the term &lt;em&gt;AGI&lt;&#x2F;em&gt;) be like in the future, and how will it change every aspect of our human society in the 5-10 years after its emergence (&lt;em&gt;“it could come as early as 2026”&lt;&#x2F;em&gt; as Amodei predicts). In Amodei’s vision, the powerful AI, which is similar to today’s LLMs in form, but not necessarily the same in implementation, has the following properties in my summarization:&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Super intelligent.&lt;&#x2F;strong&gt; It is &lt;em&gt;“smarter than a Nobel Prize winner”&lt;&#x2F;em&gt; in terms of pure intelligence. For example, it can prove unsolved mathematical theorems and write extremely good novels.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Works with interfaces.&lt;&#x2F;strong&gt; It has all the &lt;em&gt;“interfaces”&lt;&#x2F;em&gt; a human would require to work virtually with, other than just chatting.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Autonomous.&lt;&#x2F;strong&gt; It can autonomously solve given tasks for a long period, with only necessary clarification from human.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Interacts virtually.&lt;&#x2F;strong&gt; It doesn’t have a physical embodiment, but can control (and even create) physical tools through a computer.&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Massive amount and high speed.&lt;&#x2F;strong&gt; It has abundant resources (repurposed from training) for massive deployment (e.g., millions of instances), and learns and generates actions much faster than human (e.g., by 10-100×).&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;strong&gt;Independent yet cooperative.&lt;&#x2F;strong&gt; The millions of instances can work both independently on unrelated tasks, and cooperatively on one task, with some of them fine-tuned to be especially good at particular tasks (I would call them &lt;em&gt;experts&lt;&#x2F;em&gt;).&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;p&gt;He summarizes this as a &lt;em&gt;“country of geniuses in a datacenter”&lt;&#x2F;em&gt;, which is principally capable of solving very difficult problems very fast, but still limited by several factors from the real world. For example, speed of the outside world, need for data (e.g., in particle physics), intrinsic complexity (e.g., &lt;a href=&quot;https:&#x2F;&#x2F;en.wikipedia.org&#x2F;wiki&#x2F;Three-body_problem&quot;&gt;&lt;em&gt;the three-body problem&lt;&#x2F;em&gt;&lt;&#x2F;a&gt;), constraints from humans (e.g., by laws and people’s willingness), and physical laws (this even limits the density of the digital world by limiting number of transistors per square centimeter and minimum energy per bit erased).&lt;&#x2F;p&gt;
+&lt;p&gt;Therefore, he proposes that we should be talking about &lt;em&gt;“the marginal returns to intelligence”&lt;&#x2F;em&gt;, which is borrowed from the economic term, to conceptualize a world with very powerful AI.
+And all his visions are based on this, with awareness of in what areas, to what extent, and on what timescale does very powerful AI helps.
+This is a refreshing idea to me — we could easily end up with either overly optimistic or overly pessimistic imaginations without a reasonable measurement of the impact of intelligence.&lt;&#x2F;p&gt;
+&lt;p&gt;The above basic assumptions and framework&lt;sup class=&quot;footnote-reference&quot; id=&quot;fr-2-1&quot;&gt;&lt;a href=&quot;#fn-2&quot;&gt;[2]&lt;&#x2F;a&gt;&lt;&#x2F;sup&gt;, although not the main part of &lt;em&gt;Machines of Loving Grace&lt;&#x2F;em&gt;, impress me the most.
+After all, the hardest thing is not to infer a reasonable answer given a solid framework, but to propose the framework.&lt;&#x2F;p&gt;
+&lt;p&gt;He spends the rest of the essay to elaborate on what would happen 5-10 years after the powerful AI comes, in five main aspects: biology and health, neuroscience and mind, economic development and poverty, peace and governance, work and meaning.
+In short, his basic prediction is that &lt;strong&gt;powerful AI will allow us to compress the progress that human would have achieved over the next 50-100 years into 5-10 years&lt;&#x2F;strong&gt;, which he refers to as the &lt;em&gt;“compressed 21st century”&lt;&#x2F;em&gt;. The question is when will that powerful AI actually come.&lt;&#x2F;p&gt;
+&lt;p&gt;In contrast to the &lt;a href=&quot;https:&#x2F;&#x2F;www.darioamodei.com&#x2F;essay&#x2F;machines-of-loving-grace#basic-assumptions-and-framework&quot;&gt;&lt;em&gt;Basic assumptions and framework&lt;&#x2F;em&gt;&lt;&#x2F;a&gt; section, i think some points in the prediction sections, for example, the “liberal democracy vs. authoritarianism” part&lt;sup class=&quot;footnote-reference&quot; id=&quot;fr-3-1&quot;&gt;&lt;a href=&quot;#fn-3&quot;&gt;[3]&lt;&#x2F;a&gt;&lt;&#x2F;sup&gt;, are rather personal.
+It is clear that even within the same analytical framework, different people would have different understanding and imagination on certain issues, based on their unique background and characteristics.
+That’s an important reason why I like to read stuffs by people of different backgrounds, and now I am attempting to keep notes.&lt;&#x2F;p&gt;
+&lt;h2 id=&quot;mechanistic-interpretability-for-safe-ai&quot;&gt;Mechanistic Interpretability for Safe AI&lt;&#x2F;h2&gt;
+&lt;p&gt;As modern AI becomes more and more powerful, towards the “powerful AI” vision discussed above, the question of how to govern powerful AI and ensure it’s &lt;em&gt;safe&lt;&#x2F;em&gt; is gaining increasing importance (and the definition of safety is another big question).
+Technically, some safety mechanisms must be developed for a powerful AI system in the future (when it becomes powerful enough), and interpretability is definitely one of the most important aspects for safety control.
+In &lt;a href=&quot;https:&#x2F;&#x2F;www.darioamodei.com&#x2F;post&#x2F;the-urgency-of-interpretability&quot;&gt;&lt;em&gt;The Urgency of Interpretability&lt;&#x2F;em&gt;&lt;&#x2F;a&gt;, Amodei discusses the importance and history of mechanistic interpretability, and Anthropic’s recent progress on this.&lt;&#x2F;p&gt;
+&lt;p&gt;In my understanding, the reason why interpretability is so important is that unlike conventional systems, which are programed in a definite manner, modern AI (i.e., AI based on deep neural networks) is mostly a &lt;em&gt;blackbox&lt;&#x2F;em&gt; — even people who trained them cannot have a 100% (sometimes not even 1%) clear understanding of why and how they produce certain outputs against some inputs.
+As Amodei quoted from &lt;a href=&quot;https:&#x2F;&#x2F;colah.github.io&#x2F;about.html&quot;&gt;Chris Olah&lt;&#x2F;a&gt;, his co-founder, generative AI systems are &lt;em&gt;“grown”&lt;&#x2F;em&gt; (I like this word) more than they are &lt;em&gt;“built”&lt;&#x2F;em&gt; — their internal mechanisms are &lt;em&gt;emergent&lt;&#x2F;em&gt; rather than directly designed.
+Unfortunately, it is very possible that such “blackbox” (for now) systems will have increasingly huge impact on us humans, until one day it must be transparent and interpretable enough for more various applications.&lt;&#x2F;p&gt;
+&lt;p&gt;Back to &lt;em&gt;mechanistic interpretability&lt;&#x2F;em&gt;, it is a field of &lt;em&gt;reverse-engineering&lt;&#x2F;em&gt; neural networks to understand the specific algorithms and computational mechanisms they learn to implement internally.
+Different from other interpretability approaches that focus on input-output relationships or high-level model behavior, mechanistic interpretability seeks detailed, mechanistic understanding of the system at low level (e.g., in layers and neurons).
+It was first studied on CNNs, and now LLMs.
+Chris Olah, co-founder of Anthropic, has been working on this field since he was at Google and OpenAI.&lt;&#x2F;p&gt;
+&lt;p&gt;Given the example of a LLM, the first step is to find single interpretable neurons&lt;sup class=&quot;footnote-reference&quot; id=&quot;fr-4-1&quot;&gt;&lt;a href=&quot;#fn-4&quot;&gt;[4]&lt;&#x2F;a&gt;&lt;&#x2F;sup&gt;, and then they found that while some neurons were immediately interpretable, the vast majority were an incoherent pastiche of many different words and concepts, which allows the model to express more concepts than it has neurons. They referred to this phenomenon as &lt;em&gt;superposition&lt;&#x2F;em&gt;. To interpret the more complicated superpositions, they adopted a signal-processing-inspired method called &lt;em&gt;sparse autoencoders&lt;&#x2F;em&gt;&lt;sup class=&quot;footnote-reference&quot; id=&quot;fr-5-1&quot;&gt;&lt;a href=&quot;#fn-5&quot;&gt;[5]&lt;&#x2F;a&gt;&lt;&#x2F;sup&gt;, with which they were able to find combinations of neurons that did correspond to cleaner, more human-understandable concepts (even very subtle ones like the concept of “literally or figuratively hedging or hesitating”), which they call &lt;em&gt;features&lt;&#x2F;em&gt;. They were able to find over 30 million features in Claude 3 Sonnet, Anthropic’s medium-sized commercial model, through this method.&lt;&#x2F;p&gt;
+&lt;p&gt;More could be done to understand the model’s working mechanism after finding the features. For example, artificially amplifying neurons related to a feature would significantly affect the model’s behavior (&lt;a href=&quot;https:&#x2F;&#x2F;www.anthropic.com&#x2F;news&#x2F;golden-gate-claude&quot;&gt;“Golden State Claude”&lt;&#x2F;a&gt;); tracking and manipulating groups of features (i.e., &lt;em&gt;circuits&lt;&#x2F;em&gt;&lt;sup class=&quot;footnote-reference&quot; id=&quot;fr-6-1&quot;&gt;&lt;a href=&quot;#fn-6&quot;&gt;[6]&lt;&#x2F;a&gt;&lt;&#x2F;sup&gt;) could help to understand the model’s reasoning process.
+Anthropic’s research blogs &lt;sup class=&quot;footnote-reference&quot; id=&quot;fr-7-1&quot;&gt;&lt;a href=&quot;#fn-7&quot;&gt;[7]&lt;&#x2F;a&gt;&lt;&#x2F;sup&gt; introduce these progresses in more details.&lt;&#x2F;p&gt;
+&lt;p&gt;I appreciate the idea of mechanistic interpretability to “reverse engineer” deep neural networks, including modern LLMs with billions of parameters, as it provides valuable insights about how the AI models works inside.
+It seems on a right track but I doubt if it is the ultimate path towards powerful and safe AI, to catch “bugs” inside a huge neural network — it would be like eliminating cancer cells of a blue whale.
+At least for now, I think our models are still not powerful enough to be “dangerous” — and sure mechanistic interpretability also helps improve this.&lt;&#x2F;p&gt;
+&lt;h2 id=&quot;ai-and-politics&quot;&gt;AI and Politics&lt;&#x2F;h2&gt;
+&lt;p&gt;This is a TODO section (also too large a topic to discuss) — I’ll complete this part when time allows.&lt;&#x2F;p&gt;
+&lt;hr&gt;&lt;ol class=&quot;footnotes-list&quot;&gt;
+&lt;li id=&quot;fn-1&quot;&gt;
+&lt;p&gt;I started from an Chinese article summarizing &lt;a href=&quot;https:&#x2F;&#x2F;www.darioamodei.com&#x2F;post&#x2F;on-deepseek-and-export-controls&quot;&gt;&lt;em&gt;On DeepSeek and Export Controls&lt;&#x2F;em&gt;&lt;&#x2F;a&gt;. Then I read the original English post, and other posts from &lt;a href=&quot;https:&#x2F;&#x2F;www.darioamodei.com&#x2F;&quot;&gt;Amodei’s homepage&lt;&#x2F;a&gt; afterwards. &lt;a href=&quot;#fr-1-1&quot;&gt;↩&lt;&#x2F;a&gt;&lt;&#x2F;p&gt;
+&lt;&#x2F;li&gt;
+&lt;li id=&quot;fn-2&quot;&gt;
+&lt;p&gt;These are summarized from the &lt;a href=&quot;https:&#x2F;&#x2F;www.darioamodei.com&#x2F;essay&#x2F;machines-of-loving-grace#basic-assumptions-and-framework&quot;&gt;&lt;em&gt;Basic assumptions and framework&lt;&#x2F;em&gt;&lt;&#x2F;a&gt; section of the original post. &lt;a href=&quot;#fr-2-1&quot;&gt;↩&lt;&#x2F;a&gt;&lt;&#x2F;p&gt;
+&lt;&#x2F;li&gt;
+&lt;li id=&quot;fn-3&quot;&gt;
+&lt;p&gt;&lt;em&gt;“Twenty years ago US policymakers believed that free trade with China would cause it to liberalize as it became richer; that very much didn’t happen, and we now seem headed for a second cold war with a resurgent authoritarian bloc.”&lt;&#x2F;em&gt; — In the first paragraph of &lt;a href=&quot;https:&#x2F;&#x2F;www.darioamodei.com&#x2F;essay&#x2F;machines-of-loving-grace#4-peace-and-governance&quot;&gt;&lt;em&gt;Peace and governance&lt;&#x2F;em&gt;&lt;&#x2F;a&gt; section. &lt;a href=&quot;#fr-3-1&quot;&gt;↩&lt;&#x2F;a&gt;&lt;&#x2F;p&gt;
+&lt;&#x2F;li&gt;
+&lt;li id=&quot;fn-4&quot;&gt;
+&lt;p&gt;Elhage, Nelson, et al. “Softmax Linear Units.” &lt;em&gt;Transformer Circuits Thread&lt;&#x2F;em&gt;, 27 June 2022, &lt;a href=&quot;https:&#x2F;&#x2F;transformer-circuits.pub&#x2F;2022&#x2F;solu&#x2F;index.html&quot;&gt;https:&#x2F;&#x2F;transformer-circuits.pub&#x2F;2022&#x2F;solu&#x2F;index.html&lt;&#x2F;a&gt;. &lt;a href=&quot;#fr-4-1&quot;&gt;↩&lt;&#x2F;a&gt;&lt;&#x2F;p&gt;
+&lt;&#x2F;li&gt;
+&lt;li id=&quot;fn-5&quot;&gt;
+&lt;p&gt;Bricken, Trenton, et al. “Towards Monosemanticity: Decomposing Language Models With Dictionary Learning.” &lt;em&gt;Transformer Circuits Thread&lt;&#x2F;em&gt;, 4 Oct. 2023, &lt;a href=&quot;https:&#x2F;&#x2F;transformer-circuits.pub&#x2F;2023&#x2F;monosemantic-features&quot;&gt;https:&#x2F;&#x2F;transformer-circuits.pub&#x2F;2023&#x2F;monosemantic-features&lt;&#x2F;a&gt;. &lt;a href=&quot;#fr-5-1&quot;&gt;↩&lt;&#x2F;a&gt;&lt;&#x2F;p&gt;
+&lt;&#x2F;li&gt;
+&lt;li id=&quot;fn-6&quot;&gt;
+&lt;p&gt;Lindsey, Jack, et al. “On the Biology of a Large Language Model.” &lt;em&gt;Transformer Circuits Thread&lt;&#x2F;em&gt;, 27 Mar. 2025, &lt;a href=&quot;https:&#x2F;&#x2F;transformer-circuits.pub&#x2F;2025&#x2F;attribution-graphs&#x2F;biology.html&quot;&gt;https:&#x2F;&#x2F;transformer-circuits.pub&#x2F;2025&#x2F;attribution-graphs&#x2F;biology.html&lt;&#x2F;a&gt;. &lt;a href=&quot;#fr-6-1&quot;&gt;↩&lt;&#x2F;a&gt;&lt;&#x2F;p&gt;
+&lt;&#x2F;li&gt;
+&lt;li id=&quot;fn-7&quot;&gt;
+&lt;p&gt;&lt;a href=&quot;https:&#x2F;&#x2F;www.anthropic.com&#x2F;research&#x2F;mapping-mind-language-model&quot;&gt;&lt;em&gt;Mapping the Mind of a Large Language Model&lt;&#x2F;em&gt;&lt;&#x2F;a&gt;, and &lt;a href=&quot;https:&#x2F;&#x2F;www.anthropic.com&#x2F;research&#x2F;tracing-thoughts-language-model&quot;&gt;&lt;em&gt;Tracing the thoughts of a large language model&lt;&#x2F;em&gt;&lt;&#x2F;a&gt; &lt;a href=&quot;#fr-7-1&quot;&gt;↩&lt;&#x2F;a&gt;&lt;&#x2F;p&gt;
+&lt;&#x2F;li&gt;
+&lt;&#x2F;ol&gt;
+</content>
+        <summary type="html">Reading Notes of Dario Amodei&#x27;s Blog.</summary>
+        </entry><entry xml:lang="en">
+        <title>Charlesie</title>
+        <published>2025-08-01T00:00:00+00:00</published>
+        <updated>2025-08-01T00:00:00+00:00</updated>
+        <author>
+            <name>Xiangyu Li</name>
+        </author>
+        <link rel="alternate" href="https://xxxxyu.github.io/blog/poems/charlesie/" type="text/html"/>
+        <id>https://xxxxyu.github.io/blog/poems/charlesie/</id>
+        
+            <content type="html">&lt;p&gt;Charlesie is on the right&lt;&#x2F;p&gt;
+&lt;p&gt;or&lt;&#x2F;p&gt;
+&lt;p&gt;Charlesie is on the left?&lt;&#x2F;p&gt;
+&lt;span id=&quot;continue-reading&quot;&gt;&lt;&#x2F;span&gt;
+&lt;p&gt;I cannot tell.&lt;&#x2F;p&gt;
+&lt;br&gt;
+&lt;p&gt;Only thing I remember,&lt;&#x2F;p&gt;
+&lt;p&gt;Charlesie is flattened against Charles.&lt;&#x2F;p&gt;
+&lt;p&gt;And the other one&lt;&#x2F;p&gt;
+&lt;p&gt;is Cathy.&lt;&#x2F;p&gt;
+</content>
+        <summary type="html">Charlesie is on the right
+or
+Charlesie is on the left?
+…</summary>
+        </entry><entry xml:lang="en">
+        <title>Cheatsheet for Setting up Android Smartphones</title>
+        <published>2025-01-09T00:00:00+00:00</published>
+        <updated>2025-08-04T00:00:00+00:00</updated>
+        <author>
+            <name>Xiangyu Li</name>
+        </author>
+        <link rel="alternate" href="https://xxxxyu.github.io/blog/posts/edge-development-cheatsheet/smartphone-setup-cheatsheet/" type="text/html"/>
+        <id>https://xxxxyu.github.io/blog/posts/edge-development-cheatsheet/smartphone-setup-cheatsheet/</id>
+        
+            <content type="html">&lt;p&gt;This is mostly based on my personal development requirements, which are focused on AI-related computing tasks. Specifically, I run DNNs in a Linux-like environment. So it might not perfectly suits you if you’re more interested in App development and GUI debugging.&lt;&#x2F;p&gt;
+&lt;h2 id=&quot;first-boot&quot;&gt;First Boot&lt;&#x2F;h2&gt;
+&lt;h3 id=&quot;register&quot;&gt;Register&lt;&#x2F;h3&gt;
+&lt;p&gt;Register your new device to activate the warranty (if you are not going to root the system).&lt;&#x2F;p&gt;
+&lt;h2 id=&quot;root-the-system&quot;&gt;Root the System&lt;&#x2F;h2&gt;
+&lt;p&gt;Root is required to obtain advanced system control (as super user).&lt;&#x2F;p&gt;
+&lt;p&gt;Magisk 中文网教程：&lt;a href=&quot;https:&#x2F;&#x2F;magiskcn.com&quot;&gt;https:&#x2F;&#x2F;magiskcn.com&lt;&#x2F;a&gt;&lt;&#x2F;p&gt;
+&lt;p&gt;This section continues with an OnePlus example, as it is the most root-friendly Chinese smartphone brand.&lt;&#x2F;p&gt;
+&lt;p&gt;Requirements:&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;ADB (Android Debug Bridge): &lt;a href=&quot;https:&#x2F;&#x2F;developer.android.com&#x2F;tools&#x2F;releases&#x2F;platform-tools&quot;&gt;platform-tools&lt;&#x2F;a&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;Android OTA payload dumper: &lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;ssut&#x2F;payload-dumper-go&quot;&gt;payload-dumper-go&lt;&#x2F;a&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;System ROM: &lt;a href=&quot;https:&#x2F;&#x2F;magiskcn.com&#x2F;roms.html&quot;&gt;MagiskCN&lt;&#x2F;a&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;Magisk APK: &lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;topjohnwu&#x2F;Magisk&#x2F;releases&quot;&gt;GitHub Release&lt;&#x2F;a&gt;&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h3 id=&quot;unlock-bootloader&quot;&gt;Unlock Bootloader&lt;&#x2F;h3&gt;
+&lt;p&gt;Magisk 中文网教程：&lt;a href=&quot;https:&#x2F;&#x2F;magiskcn.com&#x2F;oneplus-unlock-qualcomm#google_vignette&quot;&gt;https:&#x2F;&#x2F;magiskcn.com&#x2F;oneplus-unlock-qualcomm#google_vignette&lt;&#x2F;a&gt;&lt;&#x2F;p&gt;
+&lt;ol&gt;
+&lt;li&gt;Enter developer mode&lt;&#x2F;li&gt;
+&lt;li&gt;OEM unlock (depends on vendors)&lt;&#x2F;li&gt;
+&lt;li&gt;Connect to the host PC with USB debugging&lt;&#x2F;li&gt;
+&lt;li&gt;Enter bootloader: &lt;code&gt;adb reboot bootloader&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;Unlock bootloader: &lt;code&gt;bootloader flashing unlock&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;On the smartphone, select “unlock the bootloader” and confirm.&lt;&#x2F;li&gt;
+&lt;&#x2F;ol&gt;
+&lt;h3 id=&quot;root-with-magisk&quot;&gt;Root with Magisk&lt;&#x2F;h3&gt;
+&lt;p&gt;Magisk 中文网教程：&lt;a href=&quot;https:&#x2F;&#x2F;magiskcn.com&#x2F;oneplus-init-boot&quot;&gt;https:&#x2F;&#x2F;magiskcn.com&#x2F;oneplus-init-boot&lt;&#x2F;a&gt;&lt;&#x2F;p&gt;
+&lt;ol&gt;
+&lt;li&gt;On the host PC, download the matching ROM package and extract&lt;&#x2F;li&gt;
+&lt;li&gt;Extract init_boot.img from the ROM with the payload dumper
+&lt;ul&gt;
+&lt;li&gt;Usage: &lt;code&gt;payload-dumper-go -p init_boot &amp;lt;extracted&amp;gt;&#x2F;payload.bin&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;Connect to the smartphone with USB debugging&lt;&#x2F;li&gt;
+&lt;li&gt;Transfer init_boot.img to the smartphone’s “Download” folder&lt;&#x2F;li&gt;
+&lt;li&gt;Install Magisk app to the smartphone&lt;&#x2F;li&gt;
+&lt;li&gt;In Magisk app, “Install” init_boot.img to obtain “magisk_patched-xxx.img”&lt;&#x2F;li&gt;
+&lt;li&gt;Transfer “magisk_patched-xxx.img” back to the host PC&lt;&#x2F;li&gt;
+&lt;li&gt;Enter bootloader: &lt;code&gt;adb reboot bootloader&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;Flash the patch: &lt;code&gt;fastboot flash init_boot magisk_patched-xxx.img&lt;&#x2F;code&gt;
+&lt;ul&gt;
+&lt;li&gt;You should see “Okay” if it succeeds.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;Reboot the system: &lt;code&gt;fastboot reboot&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;&#x2F;ol&gt;
+&lt;p&gt;After rebooting, enter the Magisk app and check the “Magisk” version. You should be able to see the correct version displayed after a successful rooting.&lt;&#x2F;p&gt;
+&lt;h2 id=&quot;system-setting&quot;&gt;System Setting&lt;&#x2F;h2&gt;
+&lt;h3 id=&quot;developer-option&quot;&gt;Developer Option&lt;&#x2F;h3&gt;
+&lt;ul&gt;
+&lt;li&gt;Turn on developer option&lt;&#x2F;li&gt;
+&lt;li&gt;Turn on USB debugging&lt;&#x2F;li&gt;
+&lt;li&gt;Turn on wireless debugging (if you prefer)&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h3 id=&quot;system-update&quot;&gt;System Update&lt;&#x2F;h3&gt;
+&lt;p&gt;It is recommended to turn off all settings that might influence system performance and version stability. Specifically:&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;Turn off unecessary (background) services&lt;&#x2F;li&gt;
+&lt;li&gt;Turn off system auto-update and auto-download&lt;&#x2F;li&gt;
+&lt;li&gt;Remove auto-installed apps&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h3 id=&quot;battery-management&quot;&gt;Battery Management&lt;&#x2F;h3&gt;
+&lt;ul&gt;
+&lt;li&gt;Turn on “performance mode” in system-wide battery settings&lt;&#x2F;li&gt;
+&lt;li&gt;Turn on “allow background” in app-wise battery settings&lt;&#x2F;li&gt;
+&lt;li&gt;Select “acquire wakelock” for Termux processes and alike&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h2 id=&quot;apps&quot;&gt;Apps&lt;&#x2F;h2&gt;
+&lt;p&gt;How to install:&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;Install from app stores (Google Play, F-Droid, etc.)&lt;&#x2F;li&gt;
+&lt;li&gt;Install from web-downloaded APK (Android Application Package)&lt;&#x2F;li&gt;
+&lt;li&gt;Install from host PC by ADB (APK required)&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h3 id=&quot;clash-for-android-cfa&quot;&gt;Clash for Android (CFA)&lt;&#x2F;h3&gt;
+&lt;p&gt;First and foremost, setup the proxy.&lt;&#x2F;p&gt;
+&lt;p&gt;TODO: details&lt;&#x2F;p&gt;
+&lt;h3 id=&quot;f-droid&quot;&gt;F-Droid&lt;&#x2F;h3&gt;
+&lt;p&gt;F-Droid is an installable catalogue of FOSS (Free and Open Source Software) applications for the Android platform. Use it as an alternative to Google Play.&lt;&#x2F;p&gt;
+&lt;p&gt;F-Droid site: &lt;a href=&quot;https:&#x2F;&#x2F;f-droid.org&#x2F;&quot;&gt;https:&#x2F;&#x2F;f-droid.org&#x2F;&lt;&#x2F;a&gt;&lt;&#x2F;p&gt;
+&lt;h3 id=&quot;termux&quot;&gt;Termux&lt;&#x2F;h3&gt;
+&lt;p&gt;Installation by F-Droid is recommended.&lt;&#x2F;p&gt;
+&lt;p&gt;Check out the &lt;a href=&quot;https:&#x2F;&#x2F;xxxxyu.github.io&#x2F;blog&#x2F;articles&#x2F;termux-setup-cheatsheet&#x2F;&quot;&gt;Termux Setup Cheatsheet&lt;&#x2F;a&gt;.&lt;&#x2F;p&gt;
+&lt;h3 id=&quot;microsoft-edge&quot;&gt;Microsoft Edge&lt;&#x2F;h3&gt;
+&lt;p&gt;Use it as an alternative to the system default browser, which often has limited functionalities.&lt;&#x2F;p&gt;
+&lt;p&gt;I recommend Edge as it is the most available one (in Chinese app stores).&lt;&#x2F;p&gt;
+</content>
+        <summary type="html">Quickly setting up Android smartphones for development.</summary>
+        </entry><entry xml:lang="en">
+        <title>Cheatsheet for Setting up Termux on Android Smartphones</title>
+        <published>2025-01-09T00:00:00+00:00</published>
+        <updated>2025-01-09T00:00:00+00:00</updated>
+        <author>
+            <name>Xiangyu Li</name>
+        </author>
+        <link rel="alternate" href="https://xxxxyu.github.io/blog/posts/edge-development-cheatsheet/termux-setup-cheatsheet/" type="text/html"/>
+        <id>https://xxxxyu.github.io/blog/posts/edge-development-cheatsheet/termux-setup-cheatsheet/</id>
+        
+            <content type="html">&lt;p&gt;&lt;a href=&quot;https:&#x2F;&#x2F;termux.dev&#x2F;en&#x2F;&quot;&gt;Termux&lt;&#x2F;a&gt; is a useful software for emulating Linux environment in Android (much better than the ADB shell). As part of the &lt;a href=&quot;https:&#x2F;&#x2F;xxxxyu.github.io&#x2F;blog&#x2F;articles&#x2F;smartphone-setup-cheatsheet&#x2F;&quot;&gt;Smartphone Setup Cheatsheet&lt;&#x2F;a&gt;, this article elaborates on how to setup Termux.&lt;&#x2F;p&gt;
+&lt;p&gt;Also note that this is mostly based on my personal development requirements, which are focused on AI-related computing tasks. It might not perfectly suits you if you’re more interested in App development and GUI debugging.&lt;&#x2F;p&gt;
+&lt;p&gt;A useful repo: &lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;sanwebinfo&#x2F;my-termux-setup&quot;&gt;sanwebinfo&#x2F;my-termux-setup&lt;&#x2F;a&gt;&lt;&#x2F;p&gt;
+&lt;h2 id=&quot;installation&quot;&gt;Installation&lt;&#x2F;h2&gt;
+&lt;ul&gt;
+&lt;li&gt;Install from &lt;a href=&quot;https:&#x2F;&#x2F;f-droid.org&#x2F;&quot;&gt;F-Droid&lt;&#x2F;a&gt; to get convenient plugin support
+&lt;ul&gt;
+&lt;li&gt;Termux: Style&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;Install from APK if you prefer. Download from &lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;termux&#x2F;termux-app&#x2F;releases&quot;&gt;GitHub Release&lt;&#x2F;a&gt;&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h2 id=&quot;system-setup&quot;&gt;System Setup&lt;&#x2F;h2&gt;
+&lt;p&gt;System-level setup for Termux.&lt;&#x2F;p&gt;
+&lt;h3 id=&quot;update-packages&quot;&gt;Update packages&lt;&#x2F;h3&gt;
+&lt;ul&gt;
+&lt;li&gt;Select mirrors automatically: &lt;code&gt;termux-change-repo&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;Update and upgrade: &lt;code&gt;pkg update &amp;amp;&amp;amp; pkg upgrade&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h3 id=&quot;setup-ssh&quot;&gt;Setup SSH&lt;&#x2F;h3&gt;
+&lt;ul&gt;
+&lt;li&gt;Install OpenSSH: &lt;code&gt;pkg install openssh&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;Check Termux username: &lt;code&gt;whoami&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;Set login password: &lt;code&gt;passwd&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;Get IP address: &lt;code&gt;ifconfig&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;Launch SSH server: &lt;code&gt;sshd&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;Connect from remote: &lt;code&gt;ssh -p 8022 &amp;lt;username&amp;gt;@&amp;lt;ip&amp;gt;&lt;&#x2F;code&gt;
+&lt;ul&gt;
+&lt;li&gt;The default SSH port of Termux is 8022&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h3 id=&quot;install-packages&quot;&gt;Install packages&lt;&#x2F;h3&gt;
+&lt;p&gt;Common packages during system setup:&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;Tsu (su wrapper for Termux): &lt;code&gt;pkg install tsu&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;Git: &lt;code&gt;pkg install git&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;Wget: &lt;code&gt;pkg install wget&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;cURL: &lt;code&gt;pkg install curl&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;CMake: &lt;code&gt;pkg install cmake&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;tmux: &lt;code&gt;pkg install tmux&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;htop: &lt;code&gt;pkg install htop&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h2 id=&quot;environment-setup&quot;&gt;Environment Setup&lt;&#x2F;h2&gt;
+&lt;p&gt;Set up development environments.&lt;&#x2F;p&gt;
+&lt;h3 id=&quot;code&quot;&gt;Code&lt;&#x2F;h3&gt;
+&lt;p&gt;Termux doesn’t support VSC (Visual Studio Code) remote server, but you can set up an open-source &lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;coder&#x2F;code-server&quot;&gt;code-server&lt;&#x2F;a&gt; as an alternative.&lt;&#x2F;p&gt;
+&lt;p&gt;Install code-server via Tur repo:&lt;&#x2F;p&gt;
+&lt;pre data-lang=&quot;sh&quot; class=&quot;language-sh z-code&quot;&gt;&lt;code class=&quot;language-sh&quot; data-lang=&quot;sh&quot;&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-shell&quot;&gt;&lt;span class=&quot;z-variable z-function z-shell&quot;&gt;pkg&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt; install tur-repo&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-shell&quot;&gt;&lt;span class=&quot;z-variable z-function z-shell&quot;&gt;pkg&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt; install code-server&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
+&lt;p&gt;Configure the server via &lt;code&gt;~&#x2F;.config&#x2F;code-server&#x2F;config.yaml&lt;&#x2F;code&gt;. For example:&lt;&#x2F;p&gt;
+&lt;pre data-lang=&quot;yaml&quot; class=&quot;language-yaml z-code&quot;&gt;&lt;code class=&quot;language-yaml&quot; data-lang=&quot;yaml&quot;&gt;&lt;span class=&quot;z-source z-yaml&quot;&gt;&lt;span class=&quot;z-string z-unquoted z-plain z-out z-yaml&quot;&gt;&lt;span class=&quot;z-entity z-name z-tag z-yaml&quot;&gt;bind-addr&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-separator z-key-value z-mapping z-yaml&quot;&gt;:&lt;&#x2F;span&gt; &lt;span class=&quot;z-string z-unquoted z-plain z-out z-yaml&quot;&gt;0.0.0.0:8080&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-yaml&quot;&gt;&lt;span class=&quot;z-string z-unquoted z-plain z-out z-yaml&quot;&gt;&lt;span class=&quot;z-entity z-name z-tag z-yaml&quot;&gt;auth&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-separator z-key-value z-mapping z-yaml&quot;&gt;:&lt;&#x2F;span&gt; &lt;span class=&quot;z-string z-unquoted z-plain z-out z-yaml&quot;&gt;password&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
+&lt;p&gt;Launch the server:&lt;&#x2F;p&gt;
+&lt;pre data-lang=&quot;sh&quot; class=&quot;language-sh z-code&quot;&gt;&lt;code class=&quot;language-sh&quot; data-lang=&quot;sh&quot;&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-shell&quot;&gt;&lt;span class=&quot;z-variable z-function z-shell&quot;&gt;code-server&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
+&lt;p&gt;Now you will be able to access the code UI via &lt;a href=&quot;http:&#x2F;&#x2F;ip:8080&quot;&gt;http:&#x2F;&#x2F;ip:8080&lt;&#x2F;a&gt; with the configured password.&lt;&#x2F;p&gt;
+&lt;p&gt;Note that the config path will be slightly different (under &lt;code&gt;~&#x2F;.tsu&lt;&#x2F;code&gt;) if you run in &lt;code&gt;tsu&lt;&#x2F;code&gt; mode.&lt;&#x2F;p&gt;
+&lt;h3 id=&quot;python&quot;&gt;Python&lt;&#x2F;h3&gt;
+&lt;p&gt;Termux doesn’t support miniconda.&lt;&#x2F;p&gt;
+&lt;p&gt;Install Python: &lt;code&gt;pkg install python&lt;&#x2F;code&gt;&lt;&#x2F;p&gt;
+</content>
+        <summary type="html">Quickly setting up Termux on Android smartphones for development.</summary>
+        </entry><entry xml:lang="en">
+        <title>Cheatsheet for Setting up Pi Devices</title>
+        <published>2025-01-03T00:00:00+00:00</published>
+        <updated>2025-08-04T00:00:00+00:00</updated>
+        <author>
+            <name>Xiangyu Li</name>
+        </author>
+        <link rel="alternate" href="https://xxxxyu.github.io/blog/posts/edge-development-cheatsheet/pi-setup-cheatsheet/" type="text/html"/>
+        <id>https://xxxxyu.github.io/blog/posts/edge-development-cheatsheet/pi-setup-cheatsheet/</id>
+        
+            <content type="html">&lt;p&gt;This is mostly based on my personal development requirements. It is best applicable for boards like Orange Pi and Raspberry Pi.&lt;&#x2F;p&gt;
+&lt;h2 id=&quot;hardware&quot;&gt;Hardware&lt;&#x2F;h2&gt;
+&lt;h3 id=&quot;network-connection&quot;&gt;Network connection&lt;&#x2F;h3&gt;
+&lt;p&gt;Wired or wireless&lt;&#x2F;p&gt;
+&lt;h3 id=&quot;keyboard-mouse-and-display&quot;&gt;Keyboard, mouse, and display&lt;&#x2F;h3&gt;
+&lt;p&gt;For first-boot setup and local debugging&lt;&#x2F;p&gt;
+&lt;h3 id=&quot;tf-microsd-card-with-os-flashed&quot;&gt;TF (MicroSD) card with OS flashed&lt;&#x2F;h3&gt;
+&lt;ul&gt;
+&lt;li&gt;Ubuntu latest LTS recommended for general development
+&lt;ul&gt;
+&lt;li&gt;I prefer server OS over desktop ones cuz it’s more lightweight&lt;&#x2F;li&gt;
+&lt;li&gt;It also prevents the GUI affecting performance measurement&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;If money allows, buy a larger card yourself (&amp;gt;=256GB in my case)
+&lt;ul&gt;
+&lt;li&gt;The default 32&#x2F;64GB is insufficient for many tasks&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;Imaging tools: &lt;a href=&quot;https:&#x2F;&#x2F;etcher.balena.io&#x2F;#download-etcher&quot;&gt;BalenaEtcher&lt;&#x2F;a&gt; (general), and &lt;a href=&quot;https:&#x2F;&#x2F;www.raspberrypi.com&#x2F;software&#x2F;&quot;&gt;Raspberry Pi Imager&lt;&#x2F;a&gt; (R Pi)
+&lt;ul&gt;
+&lt;li&gt;R Pi Imager supports headless setup through customized configuration&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h2 id=&quot;system&quot;&gt;System&lt;&#x2F;h2&gt;
+&lt;h3 id=&quot;set-change-the-username-and-password-if-required&quot;&gt;Set&#x2F;change the username and password if required&lt;&#x2F;h3&gt;
+&lt;ul&gt;
+&lt;li&gt;Recommended format: device (raspi, orangepi) [+ user info (if not shared)]&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h3 id=&quot;connect-to-the-wireless-network&quot;&gt;Connect to the (wireless) network&lt;&#x2F;h3&gt;
+&lt;ul&gt;
+&lt;li&gt;On R Pi, you can perform a headless setup to automatically connect
+&lt;ul&gt;
+&lt;li&gt;The network is managed by &lt;code&gt;cloud-init&lt;&#x2F;code&gt;, &lt;code&gt;netplan&lt;&#x2F;code&gt;, and &lt;code&gt;networkd&lt;&#x2F;code&gt; by default.&lt;&#x2F;li&gt;
+&lt;li&gt;I switched to &lt;code&gt;NetworkManager&lt;&#x2F;code&gt; as it’s more familiar.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;On others, use the &lt;code&gt;NetworkManager&lt;&#x2F;code&gt; with Ubuntu
+&lt;ul&gt;
+&lt;li&gt;Detect available networks: &lt;code&gt;nmcli dev wifi&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;Connect by ssid: &lt;code&gt;nmcli dev wifi connect &amp;lt;ssid&amp;gt; password &amp;lt;passwd&amp;gt;&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h3 id=&quot;configure-the-network-if-required&quot;&gt;Configure the network if required&lt;&#x2F;h3&gt;
+&lt;ul&gt;
+&lt;li&gt;Tsinghua TUNET authentication: &lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;z4yx&#x2F;GoAuthing&#x2F;&quot;&gt;GoAuthing&lt;&#x2F;a&gt;
+&lt;ul&gt;
+&lt;li&gt;If there’s proxy issue to access GitHub, it’s available on &lt;a href=&quot;https:&#x2F;&#x2F;mirrors.tuna.tsinghua.edu.cn&#x2F;github-release&#x2F;z4yx&#x2F;GoAuthing&#x2F;LatestRelease&#x2F;&quot;&gt;TUNA&lt;&#x2F;a&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;Linux arm64 pre-built binaries: &lt;a href=&quot;https:&#x2F;&#x2F;mirrors.tuna.tsinghua.edu.cn&#x2F;github-release&#x2F;z4yx&#x2F;GoAuthing&#x2F;LatestRelease&#x2F;auth-thu.linux.arm64&quot;&gt;auth-thu.linux.arm64&lt;&#x2F;a&gt;&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;Setup the proxy: TODO
+&lt;ul&gt;
+&lt;li&gt;Make sure not to allow LAN connection in public network&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h3 id=&quot;install-update-necessary-packages&quot;&gt;Install&#x2F;update necessary packages&lt;&#x2F;h3&gt;
+&lt;ul&gt;
+&lt;li&gt;Switch sources when needed&lt;&#x2F;li&gt;
+&lt;li&gt;Update and upgrade first: &lt;code&gt;sudo apt update &amp;amp;&amp;amp; sudo apt upgrade&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h3 id=&quot;setup-ssh-server-for-remote-access&quot;&gt;Setup SSH server for remote access&lt;&#x2F;h3&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;sshd&lt;&#x2F;code&gt; to launch the SSH server&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;code&gt;ifconfig&lt;&#x2F;code&gt; to view the device IP&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;code&gt;ssh -p &amp;lt;port&amp;gt; user@ip&lt;&#x2F;code&gt; to test login&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;code&gt;ssh-copy-id&lt;&#x2F;code&gt; for key auth&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h3 id=&quot;others&quot;&gt;Others&lt;&#x2F;h3&gt;
+&lt;p&gt;(Optional) use vendor-provided tools like &lt;code&gt;raspi-config&lt;&#x2F;code&gt; (for Raspberry Pi) and &lt;code&gt;orangepi-config&lt;&#x2F;code&gt; (for Orange Pi) for more interactive configuration.&lt;&#x2F;p&gt;
+&lt;h2 id=&quot;environment&quot;&gt;Environment&lt;&#x2F;h2&gt;
+&lt;h3 id=&quot;basic-tools-and-packages&quot;&gt;Basic tools and packages&lt;&#x2F;h3&gt;
+&lt;ul&gt;
+&lt;li&gt;tmux: &lt;code&gt;sudo apt install tmux&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;git: &lt;code&gt;sudo apt install git&lt;&#x2F;code&gt;
+&lt;ul&gt;
+&lt;li&gt;Copy SSH public key to GitHub to clone with SSH&lt;&#x2F;li&gt;
+&lt;li&gt;Config username and email to commit&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;code-server (if platform doesn’t support VSC Remote)&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h3 id=&quot;build-tools-and-compilers&quot;&gt;Build tools and compilers&lt;&#x2F;h3&gt;
+&lt;ul&gt;
+&lt;li&gt;CMake (&amp;gt;=3.22 for most projects)
+&lt;ul&gt;
+&lt;li&gt;Install via apt: &lt;code&gt;sudo apt install cmake&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;Install from official website: &lt;a href=&quot;https:&#x2F;&#x2F;cmake.org&#x2F;download&#x2F;&quot;&gt;download page&lt;&#x2F;a&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;Update to latest: &lt;a href=&quot;https:&#x2F;&#x2F;xxxxyu.github.io&#x2F;blog&#x2F;posts&#x2F;edge-development-cheatsheet&#x2F;pi-setup-cheatsheet&#x2F;#cmake-update&quot;&gt;CMake update&lt;&#x2F;a&gt;&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;GCC
+&lt;ul&gt;
+&lt;li&gt;Install via apt: &lt;code&gt;sudo apt install build-essential&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;LLVM + Clang
+&lt;ul&gt;
+&lt;li&gt;Install from official website: &lt;a href=&quot;https:&#x2F;&#x2F;apt.llvm.org&#x2F;&quot;&gt;download page&lt;&#x2F;a&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;One-liner to install latest: &lt;code&gt;bash -c &quot;$(wget -O - https:&#x2F;&#x2F;apt.llvm.org&#x2F;llvm.sh)&quot;&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;Note: when multiple compilers (GCC, Clang, and different versions) are installed, make sure the &lt;code&gt;$CC&lt;&#x2F;code&gt; and &lt;code&gt;$CXX&lt;&#x2F;code&gt; enviroment variables are correctly set, or the building tools (e.g., CMake) might use the wrong compiler and cause errors&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h3 id=&quot;python-environments&quot;&gt;Python environments&lt;&#x2F;h3&gt;
+&lt;ul&gt;
+&lt;li&gt;Miniconda
+&lt;ul&gt;
+&lt;li&gt;Preferred for most cases&lt;&#x2F;li&gt;
+&lt;li&gt;One-liner installation (mind the OS and arch)
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;curl -O https:&#x2F;&#x2F;repo.anaconda.com&#x2F;miniconda&#x2F;Miniconda3-latest-Linux-aarch64.sh&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;code&gt;bash ~&#x2F;Miniconda3-latest-Linux-aarch64.sh&lt;&#x2F;code&gt;
+&lt;ul&gt;
+&lt;li&gt;No &lt;code&gt;sudo&lt;&#x2F;code&gt; or will be installed to another location&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;Press Enter and type yes after reading the agreement&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;Virtualenv
+&lt;ul&gt;
+&lt;li&gt;If the project specifies&lt;&#x2F;li&gt;
+&lt;li&gt;Install via apt: &lt;code&gt;sudo apt install python3-venv&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;Note: when both conda and virtualenv are installed, make sure the correct environment is activated (they seem the same from the terminal)&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h3 id=&quot;containers&quot;&gt;Containers&lt;&#x2F;h3&gt;
+&lt;ul&gt;
+&lt;li&gt;Docker: TODO&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h2 id=&quot;quick-fix&quot;&gt;Quick Fix&lt;&#x2F;h2&gt;
+&lt;h3 id=&quot;cmake-update&quot;&gt;CMake update&lt;&#x2F;h3&gt;
+&lt;p&gt;Update latest CMake on Ubuntu (generated by Claude):&lt;&#x2F;p&gt;
+&lt;pre data-lang=&quot;sh&quot; class=&quot;language-sh z-code&quot;&gt;&lt;code class=&quot;language-sh&quot; data-lang=&quot;sh&quot;&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-shell&quot;&gt;&lt;span class=&quot;z-variable z-function z-shell&quot;&gt;sudo&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt; apt remove&lt;span class=&quot;z-variable z-parameter z-option z-shell&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-parameter z-shell&quot;&gt; --&lt;&#x2F;span&gt;purge&lt;&#x2F;span&gt; cmake&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-shell&quot;&gt;&lt;span class=&quot;z-variable z-function z-shell&quot;&gt;sudo&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt; apt purge cmake&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-shell&quot;&gt;&lt;span class=&quot;z-variable z-function z-shell&quot;&gt;sudo&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt; apt autoremove&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-shell&quot;&gt;&lt;span class=&quot;z-variable z-function z-shell&quot;&gt;wget&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt;&lt;span class=&quot;z-variable z-parameter z-option z-shell&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-parameter z-shell&quot;&gt; -&lt;&#x2F;span&gt;O&lt;&#x2F;span&gt; - https:&#x2F;&#x2F;apt.kitware.com&#x2F;keys&#x2F;kitware-archive-latest.asc &lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-file-descriptor z-shell&quot;&gt;2&lt;&#x2F;span&gt;&lt;span class=&quot;z-keyword z-operator z-assignment z-redirection z-shell&quot;&gt;&amp;gt;&lt;&#x2F;span&gt;&#x2F;dev&#x2F;null&lt;&#x2F;span&gt; &lt;span class=&quot;z-keyword z-operator z-logical z-pipe z-shell&quot;&gt;|&lt;&#x2F;span&gt; &lt;span class=&quot;z-meta z-function-call z-shell&quot;&gt;&lt;span class=&quot;z-variable z-function z-shell&quot;&gt;gpg&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt;&lt;span class=&quot;z-variable z-parameter z-option z-shell&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-parameter z-shell&quot;&gt; --&lt;&#x2F;span&gt;dearmor&lt;&#x2F;span&gt; -&lt;&#x2F;span&gt; &lt;span class=&quot;z-keyword z-operator z-logical z-pipe z-shell&quot;&gt;|&lt;&#x2F;span&gt; &lt;span class=&quot;z-meta z-function-call z-shell&quot;&gt;&lt;span class=&quot;z-variable z-function z-shell&quot;&gt;sudo&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt; tee &#x2F;etc&#x2F;apt&#x2F;trusted.gpg.d&#x2F;kitware.gpg &lt;span class=&quot;z-keyword z-operator z-assignment z-redirection z-shell&quot;&gt;&amp;gt;&lt;&#x2F;span&gt;&#x2F;dev&#x2F;null&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-shell&quot;&gt;&lt;span class=&quot;z-variable z-function z-shell&quot;&gt;sudo&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt; add-apt-repository &lt;span class=&quot;z-string z-quoted z-double z-shell&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-string z-begin z-shell&quot;&gt;&amp;quot;&lt;&#x2F;span&gt;deb https:&#x2F;&#x2F;apt.kitware.com&#x2F;ubuntu&#x2F; &lt;span class=&quot;z-meta z-group z-expansion z-command z-parens z-shell&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-variable z-shell&quot;&gt;$&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-parens z-begin z-shell&quot;&gt;(&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-shell&quot;&gt;&lt;span class=&quot;z-variable z-function z-shell&quot;&gt;lsb_release&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt;&lt;span class=&quot;z-variable z-parameter z-option z-shell&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-parameter z-shell&quot;&gt; -&lt;&#x2F;span&gt;cs&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-parens z-end z-shell&quot;&gt;)&lt;&#x2F;span&gt;&lt;&#x2F;span&gt; main&lt;span class=&quot;z-punctuation z-definition z-string z-end z-shell&quot;&gt;&amp;quot;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-shell&quot;&gt;&lt;span class=&quot;z-variable z-function z-shell&quot;&gt;sudo&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt; apt update&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-shell&quot;&gt;&lt;span class=&quot;z-variable z-function z-shell&quot;&gt;sudo&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt; apt install cmake&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
+&lt;h3 id=&quot;compiler&quot;&gt;Compiler&lt;&#x2F;h3&gt;
+&lt;p&gt;Install latest standard library: &lt;code&gt;sudo apt install libstdc++-12-dev&lt;&#x2F;code&gt;&lt;&#x2F;p&gt;
+&lt;h3 id=&quot;git-clone&quot;&gt;Git Clone&lt;&#x2F;h3&gt;
+&lt;p&gt;One-liner to use SSH url: &lt;code&gt;sed -i &#x27;s&#x2F;https:\&#x2F;\&#x2F;github.com\&#x2F;&#x2F;git@github.com:&#x2F;&#x27; .gitmodules&lt;&#x2F;code&gt;&lt;&#x2F;p&gt;
+&lt;p&gt;Recursive script:&lt;&#x2F;p&gt;
+&lt;pre data-lang=&quot;sh&quot; class=&quot;language-sh z-code&quot;&gt;&lt;code class=&quot;language-sh&quot; data-lang=&quot;sh&quot;&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-comment z-line z-number-sign z-shell&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-comment z-begin z-shell&quot;&gt;#&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-comment z-line z-number-sign z-shell&quot;&gt; Function to update .gitmodules and sync&lt;&#x2F;span&gt;&lt;span class=&quot;z-comment z-line z-number-sign z-shell&quot;&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function z-shell&quot;&gt;&lt;span class=&quot;z-entity z-name z-function z-shell&quot;&gt;update_modules&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-parens z-begin z-shell&quot;&gt;(&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-parens z-end z-shell&quot;&gt;)&lt;&#x2F;span&gt; &lt;span class=&quot;z-punctuation z-section z-braces z-begin z-shell&quot;&gt;{&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function z-shell&quot;&gt;    &lt;span class=&quot;z-meta z-function-call z-shell&quot;&gt;&lt;span class=&quot;z-variable z-function z-shell&quot;&gt;sed&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt;&lt;span class=&quot;z-variable z-parameter z-option z-shell&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-parameter z-shell&quot;&gt; -&lt;&#x2F;span&gt;i&lt;&#x2F;span&gt; &lt;span class=&quot;z-string z-quoted z-single z-shell&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-string z-begin z-shell&quot;&gt;&amp;#39;&lt;&#x2F;span&gt;s&#x2F;https:\&#x2F;\&#x2F;github.com\&#x2F;&#x2F;git@github.com:&#x2F;&lt;span class=&quot;z-punctuation z-definition z-string z-end z-shell&quot;&gt;&amp;#39;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt; .gitmodules&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function z-shell&quot;&gt;    &lt;span class=&quot;z-meta z-function-call z-shell&quot;&gt;&lt;span class=&quot;z-variable z-function z-shell&quot;&gt;git&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt; submodule sync&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function z-shell&quot;&gt;    &lt;span class=&quot;z-meta z-function-call z-shell&quot;&gt;&lt;span class=&quot;z-variable z-function z-shell&quot;&gt;git&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt; submodule update&lt;span class=&quot;z-variable z-parameter z-option z-shell&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-parameter z-shell&quot;&gt; --&lt;&#x2F;span&gt;init&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function z-shell&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-braces z-end z-shell&quot;&gt;}&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-comment z-line z-number-sign z-shell&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-comment z-begin z-shell&quot;&gt;#&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-comment z-line z-number-sign z-shell&quot;&gt; Function to process each level&lt;&#x2F;span&gt;&lt;span class=&quot;z-comment z-line z-number-sign z-shell&quot;&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function z-shell&quot;&gt;&lt;span class=&quot;z-entity z-name z-function z-shell&quot;&gt;process_level&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-parens z-begin z-shell&quot;&gt;(&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-parens z-end z-shell&quot;&gt;)&lt;&#x2F;span&gt; &lt;span class=&quot;z-punctuation z-section z-braces z-begin z-shell&quot;&gt;{&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function z-shell&quot;&gt;    &lt;span class=&quot;z-comment z-line z-number-sign z-shell&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-comment z-begin z-shell&quot;&gt;#&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-comment z-line z-number-sign z-shell&quot;&gt; 1. Update current .gitmodules&lt;&#x2F;span&gt;&lt;span class=&quot;z-comment z-line z-number-sign z-shell&quot;&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function z-shell&quot;&gt;    &lt;span class=&quot;z-meta z-function-call z-shell&quot;&gt;&lt;span class=&quot;z-variable z-function z-shell&quot;&gt;update_modules&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function z-shell&quot;&gt;    
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function z-shell&quot;&gt;    &lt;span class=&quot;z-comment z-line z-number-sign z-shell&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-comment z-begin z-shell&quot;&gt;#&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-comment z-line z-number-sign z-shell&quot;&gt; 2. For each currently cloned submodule&lt;&#x2F;span&gt;&lt;span class=&quot;z-comment z-line z-number-sign z-shell&quot;&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function z-shell&quot;&gt;    &lt;span class=&quot;z-meta z-function-call z-shell&quot;&gt;&lt;span class=&quot;z-variable z-function z-shell&quot;&gt;git&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt; submodule foreach &lt;span class=&quot;z-string z-quoted z-single z-shell&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-string z-begin z-shell&quot;&gt;&amp;#39;&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function z-shell&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt;&lt;span class=&quot;z-string z-quoted z-single z-shell&quot;&gt;        # 3. Update their .gitmodules if exists
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function z-shell&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt;&lt;span class=&quot;z-string z-quoted z-single z-shell&quot;&gt;        if [ -f &amp;quot;.gitmodules&amp;quot; ]; then
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function z-shell&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt;&lt;span class=&quot;z-string z-quoted z-single z-shell&quot;&gt;            sed -i &amp;quot;s&#x2F;https:\&#x2F;\&#x2F;github.com\&#x2F;&#x2F;git@github.com:&#x2F;&amp;quot; .gitmodules
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function z-shell&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt;&lt;span class=&quot;z-string z-quoted z-single z-shell&quot;&gt;            # 4. Update their immediate submodules
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function z-shell&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt;&lt;span class=&quot;z-string z-quoted z-single z-shell&quot;&gt;            git submodule sync
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function z-shell&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt;&lt;span class=&quot;z-string z-quoted z-single z-shell&quot;&gt;            git submodule update --init
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function z-shell&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt;&lt;span class=&quot;z-string z-quoted z-single z-shell&quot;&gt;        fi
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function z-shell&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt;&lt;span class=&quot;z-string z-quoted z-single z-shell&quot;&gt;    &lt;span class=&quot;z-punctuation z-definition z-string z-end z-shell&quot;&gt;&amp;#39;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function z-shell&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-braces z-end z-shell&quot;&gt;}&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-comment z-line z-number-sign z-shell&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-comment z-begin z-shell&quot;&gt;#&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-comment z-line z-number-sign z-shell&quot;&gt; 5. Repeat multiple times to ensure all nested levels are processed&lt;&#x2F;span&gt;&lt;span class=&quot;z-comment z-line z-number-sign z-shell&quot;&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-keyword z-control z-loop z-for z-shell&quot;&gt;for&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-group z-for z-shell&quot;&gt; i &lt;span class=&quot;z-keyword z-control z-in z-shell&quot;&gt;in&lt;&#x2F;span&gt; &lt;span class=&quot;z-meta z-group z-expansion z-brace z-shell&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-expansion z-brace z-begin z-shell&quot;&gt;{&lt;&#x2F;span&gt;1..5&lt;span class=&quot;z-punctuation z-section z-expansion z-brace z-end z-shell&quot;&gt;}&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-keyword z-operator z-logical z-continue z-shell&quot;&gt;;&lt;&#x2F;span&gt; &lt;span class=&quot;z-keyword z-control z-loop z-do z-shell&quot;&gt;do&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;    &lt;span class=&quot;z-meta z-function-call z-shell&quot;&gt;&lt;span class=&quot;z-support z-function z-echo z-shell&quot;&gt;echo&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt; &lt;span class=&quot;z-string z-quoted z-double z-shell&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-string z-begin z-shell&quot;&gt;&amp;quot;&lt;&#x2F;span&gt;Processing level &lt;span class=&quot;z-meta z-group z-expansion z-parameter z-shell&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-variable z-shell&quot;&gt;$&lt;&#x2F;span&gt;&lt;span class=&quot;z-variable z-other z-readwrite z-shell&quot;&gt;i&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-definition z-string z-end z-shell&quot;&gt;&amp;quot;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;    &lt;span class=&quot;z-meta z-function-call z-shell&quot;&gt;&lt;span class=&quot;z-variable z-function z-shell&quot;&gt;process_level&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-keyword z-control z-loop z-end z-shell&quot;&gt;done&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
+&lt;h3 id=&quot;huggingface&quot;&gt;Huggingface&lt;&#x2F;h3&gt;
+&lt;p&gt;HF mirror: &lt;code&gt;export HF_ENDPOINT=https:&#x2F;&#x2F;hf-mirror.com&lt;&#x2F;code&gt;&lt;&#x2F;p&gt;
+&lt;p&gt;Mindscope: &lt;code&gt;https:&#x2F;&#x2F;www.modelscope.cn&#x2F;home&lt;&#x2F;code&gt;&lt;&#x2F;p&gt;
+</content>
+        <summary type="html">Quickly setting up new single-board computers like Raspberry Pi.</summary>
+        </entry><entry xml:lang="en">
+        <title>“口袋里的 GPT”，离我们还有多远？</title>
+        <published>2023-11-21T00:00:00+00:00</published>
+        <updated>2023-11-21T00:00:00+00:00</updated>
+        <author>
+            <name>Xiangyu Li</name>
+        </author>
+        <link rel="alternate" href="https://xxxxyu.github.io/blog/posts/gpt-in-your-pocket-weekly/" type="text/html"/>
+        <id>https://xxxxyu.github.io/blog/posts/gpt-in-your-pocket-weekly/</id>
+        
+            <content type="html">&lt;h2 id=&quot;chu-shi-gpt&quot;&gt;初识 GPT&lt;&#x2F;h2&gt;
+&lt;p&gt;2022年11月30日，OpenAI 正式发布 ChatGPT。&lt;&#x2F;p&gt;
+&lt;p&gt;2022年12月5日，ChatGPT 发布仅5天便突破100万用户。&lt;&#x2F;p&gt;
+&lt;p&gt;在国内，ChatGPT 首先在2022年12月在科技圈引起关注；而时间来到2023年2月，ChatGPT 更是在国内彻底爆火出圈，一时间风头无两。最近一段时间，Humane 和 GPTs 等又再度引起了大家的关注。在 2023 年，你从不关心 AI 的父母也要问问你，&lt;strong&gt;“GPT”是什么？&lt;&#x2F;strong&gt;&lt;&#x2F;p&gt;
+&lt;p&gt;GPT 全称为 &lt;strong&gt;Generative Pre-Trained Transformer&lt;&#x2F;strong&gt;，即生成式预训练 Transformer 模型。具体来说，Transformer 是最早于2017年提出的一种基于 Attention 的神经网络架构[1]，而 GPT 则是由 OpenAI 基于此架构开发的一系列经过大规模文本的预训练、可以生成自然语言文本的模型。当下倍受关注的“大模型”主要就是指以 GPT 为代表的这类基于 Transformer 架构的大规模生成式模型。&lt;&#x2F;p&gt;
+&lt;p&gt;最近一年来，除了 GPT 外，新的大模型如雨后春笋一般发布，例如 Meta 开源的 LLaMa 以及基于 LLaMa 的诸多模型。这些模型整体上仍沿用类似于 GPT 的架构，但在模型超参、训练数据、训练方法等方面各有不同。除了“大模型”这个称谓外，大语言模型（Large Language Model, LLM）和基础模型（Foundation Model, FM）等通常也是指它们，只是对于其应用各有侧重。为了简便，本文中统称为&lt;strong&gt;大模型&lt;&#x2F;strong&gt;或 &lt;strong&gt;LLM&lt;&#x2F;strong&gt;。&lt;&#x2F;p&gt;
+&lt;h3 id=&quot;kou-dai-li-de-gpt&quot;&gt;口袋里的 GPT&lt;&#x2F;h3&gt;
+&lt;p&gt;现阶段的大模型在对话、写作、编程等任务上已经表现出接近甚至超越人类的水平。这让很多人觉得我们距离通用人工智能（Artificial General Intelligence, AGI）又近了一步，大模型也的确展现出了改变现有生产方式的可能性。人们的想象力在此时无限延展，以往只出现在科幻作品中的场景似乎也近在咫尺，颇有“未来已来”之感。&lt;&#x2F;p&gt;
+&lt;p&gt;&lt;strong&gt;让每个人都拥有一个定制的大模型，并且成为随身携带的私人助理&lt;&#x2F;strong&gt;，就是其中颇具吸引力的一个想法——它也许是你口袋中的一个智能终端、也许是眼镜等穿戴式设备、亦或是任何更酷的形式。这个 “&lt;strong&gt;口袋里的 GPT&lt;&#x2F;strong&gt;” 可以帮你处理文书，安排日程，甚至代替你与他人（或他们的智能助理）交互。&lt;&#x2F;p&gt;
+&lt;p&gt;然而现实与理想之间却总是存在差距。除了当前模型、算法上的差距外，&lt;strong&gt;隐私安全与网络延迟&lt;&#x2F;strong&gt;也是极为重要的因素。一个高度定制化、深度参与用户日常生活的智能助理，必然需要处理大量的用户隐私数据，而使用部署在云端的大模型服务则给个人隐私安全带来了严重的隐患。同时，未来海量用户产生的大量推理请求也会对网络传输带来更大的压力，难以满足某些高实时性应用的要求。&lt;strong&gt;在端侧直接部署大模型，一方面便于解决上述问题，另一方面也将面临独特的挑战。&lt;&#x2F;strong&gt;&lt;&#x2F;p&gt;
+&lt;h2 id=&quot;da-mo-xing-duan-ce-bu-shu-de-tiao-zhan&quot;&gt;大模型端侧部署的挑战&lt;&#x2F;h2&gt;
+&lt;h3 id=&quot;zi-yuan-shou-xian&quot;&gt;资源受限&lt;&#x2F;h3&gt;
+&lt;p&gt;&lt;strong&gt;在端侧部署大模型的首要挑战，就是设备上有限的硬件资源难以满足大模型的需求。&lt;&#x2F;strong&gt; 大模型出色的能力是建立在其庞大的参数量的基础上的。例如，视觉领域经典的 CNN 模型 ResNet 参数量大致在 10M~60M 之间，反观 ChatGPT 使用的 GPT-3.5 模型的参数量最高可达 175B，比前者要大 3~4 个数量级。于是，仅仅加载模型权重所需的内存就从100 MB 上下飙升至几百 GB，更不要提计算中间数据的保存了。&lt;&#x2F;p&gt;
+&lt;p&gt;即便是像 LLaMa-7B 这样更适合部署在端侧的“小模型”，也比以 MobileNet 系列为代表的轻量级 CNN 参数量大了 3 个数量级。如果以半精度浮点数估计，需要至少 14 GB 的内存才能够勉强放下全部模型参数，而这已经远超市面上中端设备的内存上限。除了前向推理之外，如果希望根据用户数据在本地对模型进行微调训练，则会对内存与算力提出更高要求。&lt;&#x2F;p&gt;
+&lt;h3 id=&quot;ji-suan-di-xiao&quot;&gt;计算低效&lt;&#x2F;h3&gt;
+&lt;p&gt;&lt;strong&gt;端侧大模型的部署以推理为主，而大模型本身推理计算的低效，是其在端侧部署的另一个重要挑战。&lt;strong&gt;即便我们设法压缩模型并提供匹配的硬件资源，解决了&lt;&#x2F;strong&gt;可行性&lt;&#x2F;strong&gt;的问题，仍然还需要解决大模型运行的&lt;strong&gt;延时和功耗&lt;&#x2F;strong&gt;带来的&lt;strong&gt;实用性&lt;&#x2F;strong&gt;问题——我们当然不希望我们的数字小秘书以秒为单位龟速输出，同时还热得烫手（&amp;gt; &amp;lt;）。而当前大模型推理低效的主要原因，在于其&lt;strong&gt;计算-访存比低，无法充分利用计算资源&lt;&#x2F;strong&gt;。&lt;&#x2F;p&gt;
+&lt;p&gt;所谓的计算-访存比，也就是系统领域著名的 &lt;strong&gt;Roofline Model[2]&lt;&#x2F;strong&gt; 中的 Operational Intensity（计算强度）。它定义为每访问 1 byte 内存平均需要完成的计算操作次数。对于给定的硬件平台，目标任务的计算-访存比越低，计算单元每完成一次计算平均需要访问的内存也就越多。当硬件的内存带宽被占满时，即便再减少计算量或提供更多算力，也无法带来实际的性能提升。这时称系统是内存瓶颈的（memory-bound）；反之则是计算瓶颈（compute-bound）。&lt;strong&gt;端侧大模型的推理就是典型的内存瓶颈的任务。&lt;&#x2F;strong&gt;&lt;&#x2F;p&gt;
+&lt;p&gt;&lt;strong&gt;端侧大模型推理的计算-访存比低（内存瓶颈），是由其工作负载的特点决定的。&lt;&#x2F;strong&gt; 由于硬件资源和应用场景的限制，端侧大模型通常不会处理高并发的请求，且大部分时候仅有一个请求，即 batch size = 1。同时，模型处理的文本长度也较为有限。 于是在生成阶段，模型中的计算主要是矩阵向量乘和“高瘦”的矩阵乘，其模型权重每次加载后参与计算的次数较少，于是权重加载（内存访问）就成为了系统的瓶颈。&lt;&#x2F;p&gt;
+&lt;h2 id=&quot;xian-you-fang-fa&quot;&gt;现有方法&lt;&#x2F;h2&gt;
+&lt;p&gt;为了解决前文所述的大模型在端侧部署的&lt;strong&gt;资源受限&lt;&#x2F;strong&gt;和&lt;strong&gt;计算低效&lt;&#x2F;strong&gt;两大问题，已有的工作可以分为模型压缩与推理优化两类方法。在实际部署中，两类方法往往需要综合使用，以达到最优效果。&lt;&#x2F;p&gt;
+&lt;h3 id=&quot;mo-xing-ya-suo&quot;&gt;模型压缩&lt;&#x2F;h3&gt;
+&lt;p&gt;要想降低模型的内存与算力开销，最直接的方法就是降低模型的大小。大模型常用的压缩方法包括量化、剪枝、蒸馏和低秩分解等。本节简单介绍这几种常用方法，也欢迎感兴趣的同学自行深入了解。&lt;&#x2F;p&gt;
+&lt;p&gt;&lt;strong&gt;量化[4-7]（Quantization）&lt;&#x2F;strong&gt; 即用更少的 bit 数来表示模型参数，从而有效降低模型大小。按照量化后权重是否需要微调，量化方法还可进一步分类为训练后量化（Post-Training Quantization, PTQ）和量化感知训练（Quantization-Aware Training, QAT）。低 bit 量化（如 4-bit，3-bit）是当前研究探索的一个重要方向。&lt;&#x2F;p&gt;
+&lt;p&gt;&lt;strong&gt;剪枝[8-10]（Pruning）&lt;&#x2F;strong&gt; 即去除模型中一部分不重要的权重，从而降低模型的存储与计算开销。剪枝方法也可进一步分为结构化（structured）与非结构化（unstructured）两种，其中结构化剪枝对硬件计算更加友好。&lt;&#x2F;p&gt;
+&lt;p&gt;&lt;strong&gt;蒸馏（Distillation）&lt;&#x2F;strong&gt; 即使用已有的效果较好的 Teacher 模型（参数量大、精度高），去指导训练一个轻量的 Student 模型（参数量小，精度低），使得小模型输出与大模型接近。蒸馏方法常与量化和剪枝方法配合使用。&lt;&#x2F;p&gt;
+&lt;p&gt;&lt;strong&gt;低秩分解（Low-Rank Factorization）&lt;&#x2F;strong&gt; 即通过两个低秩矩阵的乘积来近似原权重矩阵，从而降低模型参数量和计算量。LoRA[11]（Low-Rank Adaptation）及其变体就是一种利用低秩分解实现高效的模型微调的方法。&lt;&#x2F;p&gt;
+&lt;h3 id=&quot;tui-li-you-hua&quot;&gt;推理优化&lt;&#x2F;h3&gt;
+&lt;p&gt;除了模型的压缩外，端侧 LLM 推理的计算过程也存在许多优化空间。为了解决延时、内存等方面的问题，已有的工作中提出了如下的方法。&lt;&#x2F;p&gt;
+&lt;p&gt;&lt;strong&gt;KV Cache&lt;&#x2F;strong&gt; 是一种以内存换时间的优化方法，在目前的推理框架中被普遍使用。其核心思想是将 Attention 计算过程中每次迭代包含重复计算的张量（也即 K 和 V）保存下来，并且随着序列的生成进行增量更新，从而避免重复计算。当序列长度增加时，KV Cache 的大小也会显著增长，需要采用适当的策略进行内存管理[12,13]。&lt;&#x2F;p&gt;
+&lt;p&gt;&lt;strong&gt;投机采样[12,13]（Speculative Sampling）&lt;&#x2F;strong&gt; 能够 small-batch 场景下提高吞吐量。所谓投机采样，即先通过一个轻量的小模型（draft model）生成（猜测）一组 token，再交由大模型（oracle model）进行评估检验。对 draft model 一次生成的多个 token 的验证没有前后依赖关系，因此可以并行执行，从而增大 batch size，提高吞吐。&lt;&#x2F;p&gt;
+&lt;p&gt;&lt;strong&gt;算子优化&lt;&#x2F;strong&gt;目前主要集中于对 &lt;strong&gt;Attention&lt;&#x2F;strong&gt; 计算的优化。在大模型推理中，FFN 的计算相当简单，优化空间也较小；而 Attention 计算中包含多次矩阵乘和非线性操作，优化空间也相对更大。近期代表工作有 Flash-Decoding[17] 和 FlashDecoding++[18] 等。&lt;&#x2F;p&gt;
+&lt;p&gt;&lt;strong&gt;流式加载（Stream Loading）&lt;&#x2F;strong&gt; 即每次仅加载一部分权重到内存（或显存）中进行推理，从而降低整体的内存（显存）占用。FlexGen[19] 通过对 GPU-CPU offloading 策略的设计实现了高吞吐的单卡 LLM 推理。但在要求时延而非吞吐的场景下，由于 LLM 加载权重的开销过大，这类方法并不适用。&lt;&#x2F;p&gt;
+&lt;h2 id=&quot;zong-jie-yu-zhan-wang&quot;&gt;总结与展望&lt;&#x2F;h2&gt;
+&lt;p&gt;本文主要介绍了目前端侧大模型部署中的挑战与已有技术，其中涵盖了模型压缩与系统优化中的多个方向。&lt;strong&gt;笔者希望通过阅读本文，感兴趣的同学能够快速补充背景知识、了解最新进展。&lt;&#x2F;strong&gt;&lt;&#x2F;p&gt;
+&lt;p&gt;虽然文中已列出许多已有工作，但如何通过模型压缩与系统角度的协同优化、进一步降低大模型推理的硬件需求和功耗、提升大模型在资源受限的设备上的运行效率，仍是一个重要的待解决问题。&lt;strong&gt;欢迎感兴趣的同学深入交流讨论（以及写得不好的地方多拍砖 0.0）。&lt;&#x2F;strong&gt;&lt;&#x2F;p&gt;
+&lt;h2 id=&quot;can-kao-wen-xian&quot;&gt;参考文献&lt;&#x2F;h2&gt;
+&lt;p&gt;[1] Vaswani A, Shazeer N, Parmar N, et al. Attention is all you need[J]. Advances in neural information processing systems, 2017, 30.&lt;&#x2F;p&gt;
+&lt;p&gt;[2] Williams S, Waterman A, Patterson D. Roofline: an insightful visual performance model for multicore architectures[J]. Communications of the ACM, 2009, 52(4): 65-76.&lt;&#x2F;p&gt;
+&lt;p&gt;[3] Haotian Tang, Shang Yang, Ji Lin, et al. TinyChat: Large Language Model on the Edge[EB&#x2F;OL]. 2023-09-06. Available: https:&#x2F;&#x2F;hanlab.mit.edu&#x2F;blog&#x2F;tinychat.&lt;&#x2F;p&gt;
+&lt;p&gt;[4] Frantar E, Ashkboos S, Hoefler T, et al. Gptq: Accurate post-training quantization for generative pre-trained transformers[J]. arXiv preprint arXiv:2210.17323, 2022.&lt;&#x2F;p&gt;
+&lt;p&gt;[5] Xiao G, Lin J, Seznec M, et al. Smoothquant: Accurate and efficient post-training quantization for large language models[C]&#x2F;&#x2F;International Conference on Machine Learning. PMLR, 2023: 38087-38099.&lt;&#x2F;p&gt;
+&lt;p&gt;[6] Lin J, Tang J, Tang H, et al. AWQ: Activation-aware Weight Quantization for LLM Compression and Acceleration[J]. arXiv preprint arXiv:2306.00978, 2023.&lt;&#x2F;p&gt;
+&lt;p&gt;[7] Liu Z, Oguz B, Zhao C, et al. LLM-QAT: Data-Free Quantization Aware Training for Large Language Models[J]. arXiv preprint arXiv:2305.17888, 2023.&lt;&#x2F;p&gt;
+&lt;p&gt;[8] Frantar E, Alistarh D. SparseGPT: Massive Language Models Can Be Accurately Pruned in One-Shot[J]. 2023.&lt;&#x2F;p&gt;
+&lt;p&gt;[9] Ma X, Fang G, Wang X. LLM-Pruner: On the Structural Pruning of Large Language Models[J]. arXiv preprint arXiv:2305.11627, 2023.&lt;&#x2F;p&gt;
+&lt;p&gt;[10] Sun M, Liu Z, Bair A, et al. A Simple and Effective Pruning Approach for Large Language Models[J]. arXiv preprint arXiv:2306.11695, 2023.&lt;&#x2F;p&gt;
+&lt;p&gt;[11] Hu E J, Shen Y, Wallis P, et al. Lora: Low-rank adaptation of large language models[J]. arXiv preprint arXiv:2106.09685, 2021.&lt;&#x2F;p&gt;
+&lt;p&gt;[12] Kwon W, Li Z, Zhuang S, et al. Efficient memory management for large language model serving with pagedattention[C]&#x2F;&#x2F;Proceedings of the 29th Symposium on Operating Systems Principles. 2023: 611-626.&lt;&#x2F;p&gt;
+&lt;p&gt;[13] Pope R, Douglas S, Chowdhery A, et al. Efficiently scaling transformer inference[J]. Proceedings of Machine Learning and Systems, 2023, 5.&lt;&#x2F;p&gt;
+&lt;p&gt;[14] Leviathan Y, Kalman M, Matias Y. Fast inference from transformers via speculative decoding[C]&#x2F;&#x2F;International Conference on Machine Learning. PMLR, 2023: 19274-19286.&lt;&#x2F;p&gt;
+&lt;p&gt;[15] Chen C, Borgeaud S, Irving G, et al. Accelerating large language model decoding with speculative sampling[J]. arXiv preprint arXiv:2302.01318, 2023.&lt;&#x2F;p&gt;
+&lt;p&gt;[16] Spector B, Re C. Accelerating llm inference with staged speculative decoding[J]. arXiv preprint arXiv:2308.04623, 2023.&lt;&#x2F;p&gt;
+&lt;p&gt;[17] Tri Dao, Daniel Haziza, Francisco Massa, and Grigory Sizov. Flash-decoding for long-context inference[EB&#x2F;OL].&lt;&#x2F;p&gt;
+&lt;p&gt;2023-10-12. Available:  https:&#x2F;&#x2F;crfm.stanford.edu&#x2F;2023&#x2F;10&#x2F;12&#x2F;flashdecoding.html.&lt;&#x2F;p&gt;
+&lt;p&gt;[18] Hong K, Dai G, Xu J, et al. FlashDecoding++: Faster Large Language Model Inference on GPUs[J]. arXiv preprint arXiv:2311.01282, 2023.&lt;&#x2F;p&gt;
+&lt;p&gt;[19] Sheng Y, Zheng L, Yuan B, et al. FlexGen: High-Throughput Generative Inference of Large Language Models with a Single GPU[J]. 2023.&lt;&#x2F;p&gt;
+&lt;p&gt;[20] Chris Love. AI for Everyone: ChatGPT Prompts That Anyone Can Use[EB&#x2F;OL]. 2023-04-22. Available: https:&#x2F;&#x2F;www.c-sharpcorner.com&#x2F;article&#x2F;ai-for-everyone-chatgpt-prompts-that-anyone-can-use&#x2F;&lt;&#x2F;p&gt;
+&lt;p&gt;[21] Yang J, Jin H, Tang R, et al. Harnessing the power of llms in practice: A survey on chatgpt and beyond[J]. arXiv preprint arXiv:2304.13712, 2023.&lt;&#x2F;p&gt;
+</content>
+        <summary type="html">唠一唠端侧大模型部署那些事。</summary>
+        </entry>
+</feed>

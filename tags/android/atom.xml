@@ -1,0 +1,195 @@
+<?xml version="1.0" encoding="utf-8"?>
+<?xml-stylesheet href="https://xxxxyu.github.io/blog/feed_style.xsl" type="text/xsl"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xml:lang="en">
+    <tabi:metadata xmlns:tabi="https://github.com/welpo/tabi">
+        <tabi:base_url>https:&#x2F;&#x2F;xxxxyu.github.io&#x2F;blog&#x2F;</tabi:base_url>
+        <tabi:separator>
+            •
+        </tabi:separator>
+        <tabi:about_feeds>This is a web feed, also known as an Atom feed. Subscribe by copying the URL from the address bar into your newsreader. Visit About Feeds to learn more and get started. It&#x27;s free.</tabi:about_feeds>
+        <tabi:visit_the_site>Visit website</tabi:visit_the_site>
+        <tabi:recent_posts>Recent posts</tabi:recent_posts>
+        <tabi:last_updated_on>Updated on $DATE</tabi:last_updated_on>
+        <tabi:default_theme></tabi:default_theme>
+        <tabi:post_listing_date>date</tabi:post_listing_date>
+        <tabi:current_section>Android</tabi:current_section>
+    </tabi:metadata><title>Xyu's Blog - Android</title>
+        <subtitle>Blog space for Xyu</subtitle>
+    <link href="https://xxxxyu.github.io/blog/tags/android/atom.xml" rel="self" type="application/atom+xml"/>
+    <link href="https://xxxxyu.github.io/blog/tags/android/" rel="alternate" type="text/html"/>
+    <generator uri="https://www.getzola.org/">Zola</generator><updated>2025-08-04T00:00:00+00:00</updated><id>https://xxxxyu.github.io/blog/tags/android/atom.xml</id><entry xml:lang="en">
+        <title>Cheatsheet for Setting up Android Smartphones</title>
+        <published>2025-01-09T00:00:00+00:00</published>
+        <updated>2025-08-04T00:00:00+00:00</updated>
+        <author>
+            <name>Xiangyu Li</name>
+        </author>
+        <link rel="alternate" href="https://xxxxyu.github.io/blog/posts/edge-development-cheatsheet/smartphone-setup-cheatsheet/" type="text/html"/>
+        <id>https://xxxxyu.github.io/blog/posts/edge-development-cheatsheet/smartphone-setup-cheatsheet/</id>
+        
+            <content type="html">&lt;p&gt;This is mostly based on my personal development requirements, which are focused on AI-related computing tasks. Specifically, I run DNNs in a Linux-like environment. So it might not perfectly suits you if you’re more interested in App development and GUI debugging.&lt;&#x2F;p&gt;
+&lt;h2 id=&quot;first-boot&quot;&gt;First Boot&lt;&#x2F;h2&gt;
+&lt;h3 id=&quot;register&quot;&gt;Register&lt;&#x2F;h3&gt;
+&lt;p&gt;Register your new device to activate the warranty (if you are not going to root the system).&lt;&#x2F;p&gt;
+&lt;h2 id=&quot;root-the-system&quot;&gt;Root the System&lt;&#x2F;h2&gt;
+&lt;p&gt;Root is required to obtain advanced system control (as super user).&lt;&#x2F;p&gt;
+&lt;p&gt;Magisk 中文网教程：&lt;a href=&quot;https:&#x2F;&#x2F;magiskcn.com&quot;&gt;https:&#x2F;&#x2F;magiskcn.com&lt;&#x2F;a&gt;&lt;&#x2F;p&gt;
+&lt;p&gt;This section continues with an OnePlus example, as it is the most root-friendly Chinese smartphone brand.&lt;&#x2F;p&gt;
+&lt;p&gt;Requirements:&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;ADB (Android Debug Bridge): &lt;a href=&quot;https:&#x2F;&#x2F;developer.android.com&#x2F;tools&#x2F;releases&#x2F;platform-tools&quot;&gt;platform-tools&lt;&#x2F;a&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;Android OTA payload dumper: &lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;ssut&#x2F;payload-dumper-go&quot;&gt;payload-dumper-go&lt;&#x2F;a&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;System ROM: &lt;a href=&quot;https:&#x2F;&#x2F;magiskcn.com&#x2F;roms.html&quot;&gt;MagiskCN&lt;&#x2F;a&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;Magisk APK: &lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;topjohnwu&#x2F;Magisk&#x2F;releases&quot;&gt;GitHub Release&lt;&#x2F;a&gt;&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h3 id=&quot;unlock-bootloader&quot;&gt;Unlock Bootloader&lt;&#x2F;h3&gt;
+&lt;p&gt;Magisk 中文网教程：&lt;a href=&quot;https:&#x2F;&#x2F;magiskcn.com&#x2F;oneplus-unlock-qualcomm#google_vignette&quot;&gt;https:&#x2F;&#x2F;magiskcn.com&#x2F;oneplus-unlock-qualcomm#google_vignette&lt;&#x2F;a&gt;&lt;&#x2F;p&gt;
+&lt;ol&gt;
+&lt;li&gt;Enter developer mode&lt;&#x2F;li&gt;
+&lt;li&gt;OEM unlock (depends on vendors)&lt;&#x2F;li&gt;
+&lt;li&gt;Connect to the host PC with USB debugging&lt;&#x2F;li&gt;
+&lt;li&gt;Enter bootloader: &lt;code&gt;adb reboot bootloader&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;Unlock bootloader: &lt;code&gt;bootloader flashing unlock&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;On the smartphone, select “unlock the bootloader” and confirm.&lt;&#x2F;li&gt;
+&lt;&#x2F;ol&gt;
+&lt;h3 id=&quot;root-with-magisk&quot;&gt;Root with Magisk&lt;&#x2F;h3&gt;
+&lt;p&gt;Magisk 中文网教程：&lt;a href=&quot;https:&#x2F;&#x2F;magiskcn.com&#x2F;oneplus-init-boot&quot;&gt;https:&#x2F;&#x2F;magiskcn.com&#x2F;oneplus-init-boot&lt;&#x2F;a&gt;&lt;&#x2F;p&gt;
+&lt;ol&gt;
+&lt;li&gt;On the host PC, download the matching ROM package and extract&lt;&#x2F;li&gt;
+&lt;li&gt;Extract init_boot.img from the ROM with the payload dumper
+&lt;ul&gt;
+&lt;li&gt;Usage: &lt;code&gt;payload-dumper-go -p init_boot &amp;lt;extracted&amp;gt;&#x2F;payload.bin&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;Connect to the smartphone with USB debugging&lt;&#x2F;li&gt;
+&lt;li&gt;Transfer init_boot.img to the smartphone’s “Download” folder&lt;&#x2F;li&gt;
+&lt;li&gt;Install Magisk app to the smartphone&lt;&#x2F;li&gt;
+&lt;li&gt;In Magisk app, “Install” init_boot.img to obtain “magisk_patched-xxx.img”&lt;&#x2F;li&gt;
+&lt;li&gt;Transfer “magisk_patched-xxx.img” back to the host PC&lt;&#x2F;li&gt;
+&lt;li&gt;Enter bootloader: &lt;code&gt;adb reboot bootloader&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;Flash the patch: &lt;code&gt;fastboot flash init_boot magisk_patched-xxx.img&lt;&#x2F;code&gt;
+&lt;ul&gt;
+&lt;li&gt;You should see “Okay” if it succeeds.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;Reboot the system: &lt;code&gt;fastboot reboot&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;&#x2F;ol&gt;
+&lt;p&gt;After rebooting, enter the Magisk app and check the “Magisk” version. You should be able to see the correct version displayed after a successful rooting.&lt;&#x2F;p&gt;
+&lt;h2 id=&quot;system-setting&quot;&gt;System Setting&lt;&#x2F;h2&gt;
+&lt;h3 id=&quot;developer-option&quot;&gt;Developer Option&lt;&#x2F;h3&gt;
+&lt;ul&gt;
+&lt;li&gt;Turn on developer option&lt;&#x2F;li&gt;
+&lt;li&gt;Turn on USB debugging&lt;&#x2F;li&gt;
+&lt;li&gt;Turn on wireless debugging (if you prefer)&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h3 id=&quot;system-update&quot;&gt;System Update&lt;&#x2F;h3&gt;
+&lt;p&gt;It is recommended to turn off all settings that might influence system performance and version stability. Specifically:&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;Turn off unecessary (background) services&lt;&#x2F;li&gt;
+&lt;li&gt;Turn off system auto-update and auto-download&lt;&#x2F;li&gt;
+&lt;li&gt;Remove auto-installed apps&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h3 id=&quot;battery-management&quot;&gt;Battery Management&lt;&#x2F;h3&gt;
+&lt;ul&gt;
+&lt;li&gt;Turn on “performance mode” in system-wide battery settings&lt;&#x2F;li&gt;
+&lt;li&gt;Turn on “allow background” in app-wise battery settings&lt;&#x2F;li&gt;
+&lt;li&gt;Select “acquire wakelock” for Termux processes and alike&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h2 id=&quot;apps&quot;&gt;Apps&lt;&#x2F;h2&gt;
+&lt;p&gt;How to install:&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;Install from app stores (Google Play, F-Droid, etc.)&lt;&#x2F;li&gt;
+&lt;li&gt;Install from web-downloaded APK (Android Application Package)&lt;&#x2F;li&gt;
+&lt;li&gt;Install from host PC by ADB (APK required)&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h3 id=&quot;clash-for-android-cfa&quot;&gt;Clash for Android (CFA)&lt;&#x2F;h3&gt;
+&lt;p&gt;First and foremost, setup the proxy.&lt;&#x2F;p&gt;
+&lt;p&gt;TODO: details&lt;&#x2F;p&gt;
+&lt;h3 id=&quot;f-droid&quot;&gt;F-Droid&lt;&#x2F;h3&gt;
+&lt;p&gt;F-Droid is an installable catalogue of FOSS (Free and Open Source Software) applications for the Android platform. Use it as an alternative to Google Play.&lt;&#x2F;p&gt;
+&lt;p&gt;F-Droid site: &lt;a href=&quot;https:&#x2F;&#x2F;f-droid.org&#x2F;&quot;&gt;https:&#x2F;&#x2F;f-droid.org&#x2F;&lt;&#x2F;a&gt;&lt;&#x2F;p&gt;
+&lt;h3 id=&quot;termux&quot;&gt;Termux&lt;&#x2F;h3&gt;
+&lt;p&gt;Installation by F-Droid is recommended.&lt;&#x2F;p&gt;
+&lt;p&gt;Check out the &lt;a href=&quot;https:&#x2F;&#x2F;xxxxyu.github.io&#x2F;blog&#x2F;articles&#x2F;termux-setup-cheatsheet&#x2F;&quot;&gt;Termux Setup Cheatsheet&lt;&#x2F;a&gt;.&lt;&#x2F;p&gt;
+&lt;h3 id=&quot;microsoft-edge&quot;&gt;Microsoft Edge&lt;&#x2F;h3&gt;
+&lt;p&gt;Use it as an alternative to the system default browser, which often has limited functionalities.&lt;&#x2F;p&gt;
+&lt;p&gt;I recommend Edge as it is the most available one (in Chinese app stores).&lt;&#x2F;p&gt;
+</content>
+        <summary type="html">Quickly setting up Android smartphones for development.</summary>
+        </entry><entry xml:lang="en">
+        <title>Cheatsheet for Setting up Termux on Android Smartphones</title>
+        <published>2025-01-09T00:00:00+00:00</published>
+        <updated>2025-01-09T00:00:00+00:00</updated>
+        <author>
+            <name>Xiangyu Li</name>
+        </author>
+        <link rel="alternate" href="https://xxxxyu.github.io/blog/posts/edge-development-cheatsheet/termux-setup-cheatsheet/" type="text/html"/>
+        <id>https://xxxxyu.github.io/blog/posts/edge-development-cheatsheet/termux-setup-cheatsheet/</id>
+        
+            <content type="html">&lt;p&gt;&lt;a href=&quot;https:&#x2F;&#x2F;termux.dev&#x2F;en&#x2F;&quot;&gt;Termux&lt;&#x2F;a&gt; is a useful software for emulating Linux environment in Android (much better than the ADB shell). As part of the &lt;a href=&quot;https:&#x2F;&#x2F;xxxxyu.github.io&#x2F;blog&#x2F;articles&#x2F;smartphone-setup-cheatsheet&#x2F;&quot;&gt;Smartphone Setup Cheatsheet&lt;&#x2F;a&gt;, this article elaborates on how to setup Termux.&lt;&#x2F;p&gt;
+&lt;p&gt;Also note that this is mostly based on my personal development requirements, which are focused on AI-related computing tasks. It might not perfectly suits you if you’re more interested in App development and GUI debugging.&lt;&#x2F;p&gt;
+&lt;p&gt;A useful repo: &lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;sanwebinfo&#x2F;my-termux-setup&quot;&gt;sanwebinfo&#x2F;my-termux-setup&lt;&#x2F;a&gt;&lt;&#x2F;p&gt;
+&lt;h2 id=&quot;installation&quot;&gt;Installation&lt;&#x2F;h2&gt;
+&lt;ul&gt;
+&lt;li&gt;Install from &lt;a href=&quot;https:&#x2F;&#x2F;f-droid.org&#x2F;&quot;&gt;F-Droid&lt;&#x2F;a&gt; to get convenient plugin support
+&lt;ul&gt;
+&lt;li&gt;Termux: Style&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;Install from APK if you prefer. Download from &lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;termux&#x2F;termux-app&#x2F;releases&quot;&gt;GitHub Release&lt;&#x2F;a&gt;&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h2 id=&quot;system-setup&quot;&gt;System Setup&lt;&#x2F;h2&gt;
+&lt;p&gt;System-level setup for Termux.&lt;&#x2F;p&gt;
+&lt;h3 id=&quot;update-packages&quot;&gt;Update packages&lt;&#x2F;h3&gt;
+&lt;ul&gt;
+&lt;li&gt;Select mirrors automatically: &lt;code&gt;termux-change-repo&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;Update and upgrade: &lt;code&gt;pkg update &amp;amp;&amp;amp; pkg upgrade&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h3 id=&quot;setup-ssh&quot;&gt;Setup SSH&lt;&#x2F;h3&gt;
+&lt;ul&gt;
+&lt;li&gt;Install OpenSSH: &lt;code&gt;pkg install openssh&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;Check Termux username: &lt;code&gt;whoami&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;Set login password: &lt;code&gt;passwd&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;Get IP address: &lt;code&gt;ifconfig&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;Launch SSH server: &lt;code&gt;sshd&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;Connect from remote: &lt;code&gt;ssh -p 8022 &amp;lt;username&amp;gt;@&amp;lt;ip&amp;gt;&lt;&#x2F;code&gt;
+&lt;ul&gt;
+&lt;li&gt;The default SSH port of Termux is 8022&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h3 id=&quot;install-packages&quot;&gt;Install packages&lt;&#x2F;h3&gt;
+&lt;p&gt;Common packages during system setup:&lt;&#x2F;p&gt;
+&lt;ul&gt;
+&lt;li&gt;Tsu (su wrapper for Termux): &lt;code&gt;pkg install tsu&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;Git: &lt;code&gt;pkg install git&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;Wget: &lt;code&gt;pkg install wget&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;cURL: &lt;code&gt;pkg install curl&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;CMake: &lt;code&gt;pkg install cmake&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;tmux: &lt;code&gt;pkg install tmux&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;htop: &lt;code&gt;pkg install htop&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h2 id=&quot;environment-setup&quot;&gt;Environment Setup&lt;&#x2F;h2&gt;
+&lt;p&gt;Set up development environments.&lt;&#x2F;p&gt;
+&lt;h3 id=&quot;code&quot;&gt;Code&lt;&#x2F;h3&gt;
+&lt;p&gt;Termux doesn’t support VSC (Visual Studio Code) remote server, but you can set up an open-source &lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;coder&#x2F;code-server&quot;&gt;code-server&lt;&#x2F;a&gt; as an alternative.&lt;&#x2F;p&gt;
+&lt;p&gt;Install code-server via Tur repo:&lt;&#x2F;p&gt;
+&lt;pre data-lang=&quot;sh&quot; class=&quot;language-sh z-code&quot;&gt;&lt;code class=&quot;language-sh&quot; data-lang=&quot;sh&quot;&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-shell&quot;&gt;&lt;span class=&quot;z-variable z-function z-shell&quot;&gt;pkg&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt; install tur-repo&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-shell&quot;&gt;&lt;span class=&quot;z-variable z-function z-shell&quot;&gt;pkg&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt; install code-server&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
+&lt;p&gt;Configure the server via &lt;code&gt;~&#x2F;.config&#x2F;code-server&#x2F;config.yaml&lt;&#x2F;code&gt;. For example:&lt;&#x2F;p&gt;
+&lt;pre data-lang=&quot;yaml&quot; class=&quot;language-yaml z-code&quot;&gt;&lt;code class=&quot;language-yaml&quot; data-lang=&quot;yaml&quot;&gt;&lt;span class=&quot;z-source z-yaml&quot;&gt;&lt;span class=&quot;z-string z-unquoted z-plain z-out z-yaml&quot;&gt;&lt;span class=&quot;z-entity z-name z-tag z-yaml&quot;&gt;bind-addr&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-separator z-key-value z-mapping z-yaml&quot;&gt;:&lt;&#x2F;span&gt; &lt;span class=&quot;z-string z-unquoted z-plain z-out z-yaml&quot;&gt;0.0.0.0:8080&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-yaml&quot;&gt;&lt;span class=&quot;z-string z-unquoted z-plain z-out z-yaml&quot;&gt;&lt;span class=&quot;z-entity z-name z-tag z-yaml&quot;&gt;auth&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-separator z-key-value z-mapping z-yaml&quot;&gt;:&lt;&#x2F;span&gt; &lt;span class=&quot;z-string z-unquoted z-plain z-out z-yaml&quot;&gt;password&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
+&lt;p&gt;Launch the server:&lt;&#x2F;p&gt;
+&lt;pre data-lang=&quot;sh&quot; class=&quot;language-sh z-code&quot;&gt;&lt;code class=&quot;language-sh&quot; data-lang=&quot;sh&quot;&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-shell&quot;&gt;&lt;span class=&quot;z-variable z-function z-shell&quot;&gt;code-server&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
+&lt;p&gt;Now you will be able to access the code UI via &lt;a href=&quot;http:&#x2F;&#x2F;ip:8080&quot;&gt;http:&#x2F;&#x2F;ip:8080&lt;&#x2F;a&gt; with the configured password.&lt;&#x2F;p&gt;
+&lt;p&gt;Note that the config path will be slightly different (under &lt;code&gt;~&#x2F;.tsu&lt;&#x2F;code&gt;) if you run in &lt;code&gt;tsu&lt;&#x2F;code&gt; mode.&lt;&#x2F;p&gt;
+&lt;h3 id=&quot;python&quot;&gt;Python&lt;&#x2F;h3&gt;
+&lt;p&gt;Termux doesn’t support miniconda.&lt;&#x2F;p&gt;
+&lt;p&gt;Install Python: &lt;code&gt;pkg install python&lt;&#x2F;code&gt;&lt;&#x2F;p&gt;
+</content>
+        <summary type="html">Quickly setting up Termux on Android smartphones for development.</summary>
+        </entry>
+</feed>

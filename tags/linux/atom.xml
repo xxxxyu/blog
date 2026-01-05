@@ -1,0 +1,221 @@
+<?xml version="1.0" encoding="utf-8"?>
+<?xml-stylesheet href="https://xxxxyu.github.io/blog/feed_style.xsl" type="text/xsl"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xml:lang="en">
+    <tabi:metadata xmlns:tabi="https://github.com/welpo/tabi">
+        <tabi:base_url>https:&#x2F;&#x2F;xxxxyu.github.io&#x2F;blog&#x2F;</tabi:base_url>
+        <tabi:separator>
+            •
+        </tabi:separator>
+        <tabi:about_feeds>This is a web feed, also known as an Atom feed. Subscribe by copying the URL from the address bar into your newsreader. Visit About Feeds to learn more and get started. It&#x27;s free.</tabi:about_feeds>
+        <tabi:visit_the_site>Visit website</tabi:visit_the_site>
+        <tabi:recent_posts>Recent posts</tabi:recent_posts>
+        <tabi:last_updated_on>Updated on $DATE</tabi:last_updated_on>
+        <tabi:default_theme></tabi:default_theme>
+        <tabi:post_listing_date>date</tabi:post_listing_date>
+        <tabi:current_section>Linux</tabi:current_section>
+    </tabi:metadata><title>Xyu's Blog - Linux</title>
+        <subtitle>Blog space for Xyu</subtitle>
+    <link href="https://xxxxyu.github.io/blog/tags/linux/atom.xml" rel="self" type="application/atom+xml"/>
+    <link href="https://xxxxyu.github.io/blog/tags/linux/" rel="alternate" type="text/html"/>
+    <generator uri="https://www.getzola.org/">Zola</generator><updated>2025-08-04T00:00:00+00:00</updated><id>https://xxxxyu.github.io/blog/tags/linux/atom.xml</id><entry xml:lang="en">
+        <title>Cheatsheet for Setting up Pi Devices</title>
+        <published>2025-01-03T00:00:00+00:00</published>
+        <updated>2025-08-04T00:00:00+00:00</updated>
+        <author>
+            <name>Xiangyu Li</name>
+        </author>
+        <link rel="alternate" href="https://xxxxyu.github.io/blog/posts/edge-development-cheatsheet/pi-setup-cheatsheet/" type="text/html"/>
+        <id>https://xxxxyu.github.io/blog/posts/edge-development-cheatsheet/pi-setup-cheatsheet/</id>
+        
+            <content type="html">&lt;p&gt;This is mostly based on my personal development requirements. It is best applicable for boards like Orange Pi and Raspberry Pi.&lt;&#x2F;p&gt;
+&lt;h2 id=&quot;hardware&quot;&gt;Hardware&lt;&#x2F;h2&gt;
+&lt;h3 id=&quot;network-connection&quot;&gt;Network connection&lt;&#x2F;h3&gt;
+&lt;p&gt;Wired or wireless&lt;&#x2F;p&gt;
+&lt;h3 id=&quot;keyboard-mouse-and-display&quot;&gt;Keyboard, mouse, and display&lt;&#x2F;h3&gt;
+&lt;p&gt;For first-boot setup and local debugging&lt;&#x2F;p&gt;
+&lt;h3 id=&quot;tf-microsd-card-with-os-flashed&quot;&gt;TF (MicroSD) card with OS flashed&lt;&#x2F;h3&gt;
+&lt;ul&gt;
+&lt;li&gt;Ubuntu latest LTS recommended for general development
+&lt;ul&gt;
+&lt;li&gt;I prefer server OS over desktop ones cuz it’s more lightweight&lt;&#x2F;li&gt;
+&lt;li&gt;It also prevents the GUI affecting performance measurement&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;If money allows, buy a larger card yourself (&amp;gt;=256GB in my case)
+&lt;ul&gt;
+&lt;li&gt;The default 32&#x2F;64GB is insufficient for many tasks&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;Imaging tools: &lt;a href=&quot;https:&#x2F;&#x2F;etcher.balena.io&#x2F;#download-etcher&quot;&gt;BalenaEtcher&lt;&#x2F;a&gt; (general), and &lt;a href=&quot;https:&#x2F;&#x2F;www.raspberrypi.com&#x2F;software&#x2F;&quot;&gt;Raspberry Pi Imager&lt;&#x2F;a&gt; (R Pi)
+&lt;ul&gt;
+&lt;li&gt;R Pi Imager supports headless setup through customized configuration&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h2 id=&quot;system&quot;&gt;System&lt;&#x2F;h2&gt;
+&lt;h3 id=&quot;set-change-the-username-and-password-if-required&quot;&gt;Set&#x2F;change the username and password if required&lt;&#x2F;h3&gt;
+&lt;ul&gt;
+&lt;li&gt;Recommended format: device (raspi, orangepi) [+ user info (if not shared)]&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h3 id=&quot;connect-to-the-wireless-network&quot;&gt;Connect to the (wireless) network&lt;&#x2F;h3&gt;
+&lt;ul&gt;
+&lt;li&gt;On R Pi, you can perform a headless setup to automatically connect
+&lt;ul&gt;
+&lt;li&gt;The network is managed by &lt;code&gt;cloud-init&lt;&#x2F;code&gt;, &lt;code&gt;netplan&lt;&#x2F;code&gt;, and &lt;code&gt;networkd&lt;&#x2F;code&gt; by default.&lt;&#x2F;li&gt;
+&lt;li&gt;I switched to &lt;code&gt;NetworkManager&lt;&#x2F;code&gt; as it’s more familiar.&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;On others, use the &lt;code&gt;NetworkManager&lt;&#x2F;code&gt; with Ubuntu
+&lt;ul&gt;
+&lt;li&gt;Detect available networks: &lt;code&gt;nmcli dev wifi&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;Connect by ssid: &lt;code&gt;nmcli dev wifi connect &amp;lt;ssid&amp;gt; password &amp;lt;passwd&amp;gt;&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h3 id=&quot;configure-the-network-if-required&quot;&gt;Configure the network if required&lt;&#x2F;h3&gt;
+&lt;ul&gt;
+&lt;li&gt;Tsinghua TUNET authentication: &lt;a href=&quot;https:&#x2F;&#x2F;github.com&#x2F;z4yx&#x2F;GoAuthing&#x2F;&quot;&gt;GoAuthing&lt;&#x2F;a&gt;
+&lt;ul&gt;
+&lt;li&gt;If there’s proxy issue to access GitHub, it’s available on &lt;a href=&quot;https:&#x2F;&#x2F;mirrors.tuna.tsinghua.edu.cn&#x2F;github-release&#x2F;z4yx&#x2F;GoAuthing&#x2F;LatestRelease&#x2F;&quot;&gt;TUNA&lt;&#x2F;a&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;Linux arm64 pre-built binaries: &lt;a href=&quot;https:&#x2F;&#x2F;mirrors.tuna.tsinghua.edu.cn&#x2F;github-release&#x2F;z4yx&#x2F;GoAuthing&#x2F;LatestRelease&#x2F;auth-thu.linux.arm64&quot;&gt;auth-thu.linux.arm64&lt;&#x2F;a&gt;&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;Setup the proxy: TODO
+&lt;ul&gt;
+&lt;li&gt;Make sure not to allow LAN connection in public network&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h3 id=&quot;install-update-necessary-packages&quot;&gt;Install&#x2F;update necessary packages&lt;&#x2F;h3&gt;
+&lt;ul&gt;
+&lt;li&gt;Switch sources when needed&lt;&#x2F;li&gt;
+&lt;li&gt;Update and upgrade first: &lt;code&gt;sudo apt update &amp;amp;&amp;amp; sudo apt upgrade&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h3 id=&quot;setup-ssh-server-for-remote-access&quot;&gt;Setup SSH server for remote access&lt;&#x2F;h3&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;sshd&lt;&#x2F;code&gt; to launch the SSH server&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;code&gt;ifconfig&lt;&#x2F;code&gt; to view the device IP&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;code&gt;ssh -p &amp;lt;port&amp;gt; user@ip&lt;&#x2F;code&gt; to test login&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;code&gt;ssh-copy-id&lt;&#x2F;code&gt; for key auth&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h3 id=&quot;others&quot;&gt;Others&lt;&#x2F;h3&gt;
+&lt;p&gt;(Optional) use vendor-provided tools like &lt;code&gt;raspi-config&lt;&#x2F;code&gt; (for Raspberry Pi) and &lt;code&gt;orangepi-config&lt;&#x2F;code&gt; (for Orange Pi) for more interactive configuration.&lt;&#x2F;p&gt;
+&lt;h2 id=&quot;environment&quot;&gt;Environment&lt;&#x2F;h2&gt;
+&lt;h3 id=&quot;basic-tools-and-packages&quot;&gt;Basic tools and packages&lt;&#x2F;h3&gt;
+&lt;ul&gt;
+&lt;li&gt;tmux: &lt;code&gt;sudo apt install tmux&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;git: &lt;code&gt;sudo apt install git&lt;&#x2F;code&gt;
+&lt;ul&gt;
+&lt;li&gt;Copy SSH public key to GitHub to clone with SSH&lt;&#x2F;li&gt;
+&lt;li&gt;Config username and email to commit&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;code-server (if platform doesn’t support VSC Remote)&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h3 id=&quot;build-tools-and-compilers&quot;&gt;Build tools and compilers&lt;&#x2F;h3&gt;
+&lt;ul&gt;
+&lt;li&gt;CMake (&amp;gt;=3.22 for most projects)
+&lt;ul&gt;
+&lt;li&gt;Install via apt: &lt;code&gt;sudo apt install cmake&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;Install from official website: &lt;a href=&quot;https:&#x2F;&#x2F;cmake.org&#x2F;download&#x2F;&quot;&gt;download page&lt;&#x2F;a&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;Update to latest: &lt;a href=&quot;https:&#x2F;&#x2F;xxxxyu.github.io&#x2F;blog&#x2F;posts&#x2F;edge-development-cheatsheet&#x2F;pi-setup-cheatsheet&#x2F;#cmake-update&quot;&gt;CMake update&lt;&#x2F;a&gt;&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;GCC
+&lt;ul&gt;
+&lt;li&gt;Install via apt: &lt;code&gt;sudo apt install build-essential&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;LLVM + Clang
+&lt;ul&gt;
+&lt;li&gt;Install from official website: &lt;a href=&quot;https:&#x2F;&#x2F;apt.llvm.org&#x2F;&quot;&gt;download page&lt;&#x2F;a&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;One-liner to install latest: &lt;code&gt;bash -c &quot;$(wget -O - https:&#x2F;&#x2F;apt.llvm.org&#x2F;llvm.sh)&quot;&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;Note: when multiple compilers (GCC, Clang, and different versions) are installed, make sure the &lt;code&gt;$CC&lt;&#x2F;code&gt; and &lt;code&gt;$CXX&lt;&#x2F;code&gt; enviroment variables are correctly set, or the building tools (e.g., CMake) might use the wrong compiler and cause errors&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h3 id=&quot;python-environments&quot;&gt;Python environments&lt;&#x2F;h3&gt;
+&lt;ul&gt;
+&lt;li&gt;Miniconda
+&lt;ul&gt;
+&lt;li&gt;Preferred for most cases&lt;&#x2F;li&gt;
+&lt;li&gt;One-liner installation (mind the OS and arch)
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;curl -O https:&#x2F;&#x2F;repo.anaconda.com&#x2F;miniconda&#x2F;Miniconda3-latest-Linux-aarch64.sh&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;li&gt;&lt;code&gt;bash ~&#x2F;Miniconda3-latest-Linux-aarch64.sh&lt;&#x2F;code&gt;
+&lt;ul&gt;
+&lt;li&gt;No &lt;code&gt;sudo&lt;&#x2F;code&gt; or will be installed to another location&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;Press Enter and type yes after reading the agreement&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;Virtualenv
+&lt;ul&gt;
+&lt;li&gt;If the project specifies&lt;&#x2F;li&gt;
+&lt;li&gt;Install via apt: &lt;code&gt;sudo apt install python3-venv&lt;&#x2F;code&gt;&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;&#x2F;li&gt;
+&lt;li&gt;Note: when both conda and virtualenv are installed, make sure the correct environment is activated (they seem the same from the terminal)&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h3 id=&quot;containers&quot;&gt;Containers&lt;&#x2F;h3&gt;
+&lt;ul&gt;
+&lt;li&gt;Docker: TODO&lt;&#x2F;li&gt;
+&lt;&#x2F;ul&gt;
+&lt;h2 id=&quot;quick-fix&quot;&gt;Quick Fix&lt;&#x2F;h2&gt;
+&lt;h3 id=&quot;cmake-update&quot;&gt;CMake update&lt;&#x2F;h3&gt;
+&lt;p&gt;Update latest CMake on Ubuntu (generated by Claude):&lt;&#x2F;p&gt;
+&lt;pre data-lang=&quot;sh&quot; class=&quot;language-sh z-code&quot;&gt;&lt;code class=&quot;language-sh&quot; data-lang=&quot;sh&quot;&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-shell&quot;&gt;&lt;span class=&quot;z-variable z-function z-shell&quot;&gt;sudo&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt; apt remove&lt;span class=&quot;z-variable z-parameter z-option z-shell&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-parameter z-shell&quot;&gt; --&lt;&#x2F;span&gt;purge&lt;&#x2F;span&gt; cmake&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-shell&quot;&gt;&lt;span class=&quot;z-variable z-function z-shell&quot;&gt;sudo&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt; apt purge cmake&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-shell&quot;&gt;&lt;span class=&quot;z-variable z-function z-shell&quot;&gt;sudo&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt; apt autoremove&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-shell&quot;&gt;&lt;span class=&quot;z-variable z-function z-shell&quot;&gt;wget&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt;&lt;span class=&quot;z-variable z-parameter z-option z-shell&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-parameter z-shell&quot;&gt; -&lt;&#x2F;span&gt;O&lt;&#x2F;span&gt; - https:&#x2F;&#x2F;apt.kitware.com&#x2F;keys&#x2F;kitware-archive-latest.asc &lt;span class=&quot;z-constant z-numeric z-integer z-decimal z-file-descriptor z-shell&quot;&gt;2&lt;&#x2F;span&gt;&lt;span class=&quot;z-keyword z-operator z-assignment z-redirection z-shell&quot;&gt;&amp;gt;&lt;&#x2F;span&gt;&#x2F;dev&#x2F;null&lt;&#x2F;span&gt; &lt;span class=&quot;z-keyword z-operator z-logical z-pipe z-shell&quot;&gt;|&lt;&#x2F;span&gt; &lt;span class=&quot;z-meta z-function-call z-shell&quot;&gt;&lt;span class=&quot;z-variable z-function z-shell&quot;&gt;gpg&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt;&lt;span class=&quot;z-variable z-parameter z-option z-shell&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-parameter z-shell&quot;&gt; --&lt;&#x2F;span&gt;dearmor&lt;&#x2F;span&gt; -&lt;&#x2F;span&gt; &lt;span class=&quot;z-keyword z-operator z-logical z-pipe z-shell&quot;&gt;|&lt;&#x2F;span&gt; &lt;span class=&quot;z-meta z-function-call z-shell&quot;&gt;&lt;span class=&quot;z-variable z-function z-shell&quot;&gt;sudo&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt; tee &#x2F;etc&#x2F;apt&#x2F;trusted.gpg.d&#x2F;kitware.gpg &lt;span class=&quot;z-keyword z-operator z-assignment z-redirection z-shell&quot;&gt;&amp;gt;&lt;&#x2F;span&gt;&#x2F;dev&#x2F;null&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-shell&quot;&gt;&lt;span class=&quot;z-variable z-function z-shell&quot;&gt;sudo&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt; add-apt-repository &lt;span class=&quot;z-string z-quoted z-double z-shell&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-string z-begin z-shell&quot;&gt;&amp;quot;&lt;&#x2F;span&gt;deb https:&#x2F;&#x2F;apt.kitware.com&#x2F;ubuntu&#x2F; &lt;span class=&quot;z-meta z-group z-expansion z-command z-parens z-shell&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-variable z-shell&quot;&gt;$&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-parens z-begin z-shell&quot;&gt;(&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-shell&quot;&gt;&lt;span class=&quot;z-variable z-function z-shell&quot;&gt;lsb_release&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt;&lt;span class=&quot;z-variable z-parameter z-option z-shell&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-parameter z-shell&quot;&gt; -&lt;&#x2F;span&gt;cs&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-parens z-end z-shell&quot;&gt;)&lt;&#x2F;span&gt;&lt;&#x2F;span&gt; main&lt;span class=&quot;z-punctuation z-definition z-string z-end z-shell&quot;&gt;&amp;quot;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-shell&quot;&gt;&lt;span class=&quot;z-variable z-function z-shell&quot;&gt;sudo&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt; apt update&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-shell&quot;&gt;&lt;span class=&quot;z-variable z-function z-shell&quot;&gt;sudo&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt; apt install cmake&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
+&lt;h3 id=&quot;compiler&quot;&gt;Compiler&lt;&#x2F;h3&gt;
+&lt;p&gt;Install latest standard library: &lt;code&gt;sudo apt install libstdc++-12-dev&lt;&#x2F;code&gt;&lt;&#x2F;p&gt;
+&lt;h3 id=&quot;git-clone&quot;&gt;Git Clone&lt;&#x2F;h3&gt;
+&lt;p&gt;One-liner to use SSH url: &lt;code&gt;sed -i &#x27;s&#x2F;https:\&#x2F;\&#x2F;github.com\&#x2F;&#x2F;git@github.com:&#x2F;&#x27; .gitmodules&lt;&#x2F;code&gt;&lt;&#x2F;p&gt;
+&lt;p&gt;Recursive script:&lt;&#x2F;p&gt;
+&lt;pre data-lang=&quot;sh&quot; class=&quot;language-sh z-code&quot;&gt;&lt;code class=&quot;language-sh&quot; data-lang=&quot;sh&quot;&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-comment z-line z-number-sign z-shell&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-comment z-begin z-shell&quot;&gt;#&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-comment z-line z-number-sign z-shell&quot;&gt; Function to update .gitmodules and sync&lt;&#x2F;span&gt;&lt;span class=&quot;z-comment z-line z-number-sign z-shell&quot;&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function z-shell&quot;&gt;&lt;span class=&quot;z-entity z-name z-function z-shell&quot;&gt;update_modules&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-parens z-begin z-shell&quot;&gt;(&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-parens z-end z-shell&quot;&gt;)&lt;&#x2F;span&gt; &lt;span class=&quot;z-punctuation z-section z-braces z-begin z-shell&quot;&gt;{&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function z-shell&quot;&gt;    &lt;span class=&quot;z-meta z-function-call z-shell&quot;&gt;&lt;span class=&quot;z-variable z-function z-shell&quot;&gt;sed&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt;&lt;span class=&quot;z-variable z-parameter z-option z-shell&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-parameter z-shell&quot;&gt; -&lt;&#x2F;span&gt;i&lt;&#x2F;span&gt; &lt;span class=&quot;z-string z-quoted z-single z-shell&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-string z-begin z-shell&quot;&gt;&amp;#39;&lt;&#x2F;span&gt;s&#x2F;https:\&#x2F;\&#x2F;github.com\&#x2F;&#x2F;git@github.com:&#x2F;&lt;span class=&quot;z-punctuation z-definition z-string z-end z-shell&quot;&gt;&amp;#39;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt; .gitmodules&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function z-shell&quot;&gt;    &lt;span class=&quot;z-meta z-function-call z-shell&quot;&gt;&lt;span class=&quot;z-variable z-function z-shell&quot;&gt;git&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt; submodule sync&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function z-shell&quot;&gt;    &lt;span class=&quot;z-meta z-function-call z-shell&quot;&gt;&lt;span class=&quot;z-variable z-function z-shell&quot;&gt;git&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt; submodule update&lt;span class=&quot;z-variable z-parameter z-option z-shell&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-parameter z-shell&quot;&gt; --&lt;&#x2F;span&gt;init&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function z-shell&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-braces z-end z-shell&quot;&gt;}&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-comment z-line z-number-sign z-shell&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-comment z-begin z-shell&quot;&gt;#&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-comment z-line z-number-sign z-shell&quot;&gt; Function to process each level&lt;&#x2F;span&gt;&lt;span class=&quot;z-comment z-line z-number-sign z-shell&quot;&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function z-shell&quot;&gt;&lt;span class=&quot;z-entity z-name z-function z-shell&quot;&gt;process_level&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-parens z-begin z-shell&quot;&gt;(&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-section z-parens z-end z-shell&quot;&gt;)&lt;&#x2F;span&gt; &lt;span class=&quot;z-punctuation z-section z-braces z-begin z-shell&quot;&gt;{&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function z-shell&quot;&gt;    &lt;span class=&quot;z-comment z-line z-number-sign z-shell&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-comment z-begin z-shell&quot;&gt;#&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-comment z-line z-number-sign z-shell&quot;&gt; 1. Update current .gitmodules&lt;&#x2F;span&gt;&lt;span class=&quot;z-comment z-line z-number-sign z-shell&quot;&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function z-shell&quot;&gt;    &lt;span class=&quot;z-meta z-function-call z-shell&quot;&gt;&lt;span class=&quot;z-variable z-function z-shell&quot;&gt;update_modules&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function z-shell&quot;&gt;    
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function z-shell&quot;&gt;    &lt;span class=&quot;z-comment z-line z-number-sign z-shell&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-comment z-begin z-shell&quot;&gt;#&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-comment z-line z-number-sign z-shell&quot;&gt; 2. For each currently cloned submodule&lt;&#x2F;span&gt;&lt;span class=&quot;z-comment z-line z-number-sign z-shell&quot;&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function z-shell&quot;&gt;    &lt;span class=&quot;z-meta z-function-call z-shell&quot;&gt;&lt;span class=&quot;z-variable z-function z-shell&quot;&gt;git&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt; submodule foreach &lt;span class=&quot;z-string z-quoted z-single z-shell&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-string z-begin z-shell&quot;&gt;&amp;#39;&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function z-shell&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt;&lt;span class=&quot;z-string z-quoted z-single z-shell&quot;&gt;        # 3. Update their .gitmodules if exists
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function z-shell&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt;&lt;span class=&quot;z-string z-quoted z-single z-shell&quot;&gt;        if [ -f &amp;quot;.gitmodules&amp;quot; ]; then
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function z-shell&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt;&lt;span class=&quot;z-string z-quoted z-single z-shell&quot;&gt;            sed -i &amp;quot;s&#x2F;https:\&#x2F;\&#x2F;github.com\&#x2F;&#x2F;git@github.com:&#x2F;&amp;quot; .gitmodules
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function z-shell&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt;&lt;span class=&quot;z-string z-quoted z-single z-shell&quot;&gt;            # 4. Update their immediate submodules
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function z-shell&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt;&lt;span class=&quot;z-string z-quoted z-single z-shell&quot;&gt;            git submodule sync
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function z-shell&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt;&lt;span class=&quot;z-string z-quoted z-single z-shell&quot;&gt;            git submodule update --init
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function z-shell&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt;&lt;span class=&quot;z-string z-quoted z-single z-shell&quot;&gt;        fi
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function z-shell&quot;&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt;&lt;span class=&quot;z-string z-quoted z-single z-shell&quot;&gt;    &lt;span class=&quot;z-punctuation z-definition z-string z-end z-shell&quot;&gt;&amp;#39;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-meta z-function z-shell&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-braces z-end z-shell&quot;&gt;}&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-comment z-line z-number-sign z-shell&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-comment z-begin z-shell&quot;&gt;#&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-comment z-line z-number-sign z-shell&quot;&gt; 5. Repeat multiple times to ensure all nested levels are processed&lt;&#x2F;span&gt;&lt;span class=&quot;z-comment z-line z-number-sign z-shell&quot;&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-keyword z-control z-loop z-for z-shell&quot;&gt;for&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-group z-for z-shell&quot;&gt; i &lt;span class=&quot;z-keyword z-control z-in z-shell&quot;&gt;in&lt;&#x2F;span&gt; &lt;span class=&quot;z-meta z-group z-expansion z-brace z-shell&quot;&gt;&lt;span class=&quot;z-punctuation z-section z-expansion z-brace z-begin z-shell&quot;&gt;{&lt;&#x2F;span&gt;1..5&lt;span class=&quot;z-punctuation z-section z-expansion z-brace z-end z-shell&quot;&gt;}&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-keyword z-operator z-logical z-continue z-shell&quot;&gt;;&lt;&#x2F;span&gt; &lt;span class=&quot;z-keyword z-control z-loop z-do z-shell&quot;&gt;do&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;    &lt;span class=&quot;z-meta z-function-call z-shell&quot;&gt;&lt;span class=&quot;z-support z-function z-echo z-shell&quot;&gt;echo&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-meta z-function-call z-arguments z-shell&quot;&gt; &lt;span class=&quot;z-string z-quoted z-double z-shell&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-string z-begin z-shell&quot;&gt;&amp;quot;&lt;&#x2F;span&gt;Processing level &lt;span class=&quot;z-meta z-group z-expansion z-parameter z-shell&quot;&gt;&lt;span class=&quot;z-punctuation z-definition z-variable z-shell&quot;&gt;$&lt;&#x2F;span&gt;&lt;span class=&quot;z-variable z-other z-readwrite z-shell&quot;&gt;i&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;span class=&quot;z-punctuation z-definition z-string z-end z-shell&quot;&gt;&amp;quot;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;    &lt;span class=&quot;z-meta z-function-call z-shell&quot;&gt;&lt;span class=&quot;z-variable z-function z-shell&quot;&gt;process_level&lt;&#x2F;span&gt;&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;span class=&quot;z-source z-shell z-bash&quot;&gt;&lt;span class=&quot;z-keyword z-control z-loop z-end z-shell&quot;&gt;done&lt;&#x2F;span&gt;
+&lt;&#x2F;span&gt;&lt;&#x2F;code&gt;&lt;&#x2F;pre&gt;
+&lt;h3 id=&quot;huggingface&quot;&gt;Huggingface&lt;&#x2F;h3&gt;
+&lt;p&gt;HF mirror: &lt;code&gt;export HF_ENDPOINT=https:&#x2F;&#x2F;hf-mirror.com&lt;&#x2F;code&gt;&lt;&#x2F;p&gt;
+&lt;p&gt;Mindscope: &lt;code&gt;https:&#x2F;&#x2F;www.modelscope.cn&#x2F;home&lt;&#x2F;code&gt;&lt;&#x2F;p&gt;
+</content>
+        <summary type="html">Quickly setting up new single-board computers like Raspberry Pi.</summary>
+        </entry>
+</feed>
